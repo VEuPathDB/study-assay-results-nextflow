@@ -79,13 +79,15 @@ workflow {
             def jsonSlurper = new JsonSlurper()
             def jsonData = jsonSlurper.parse(step_file)
 
-             def dynamicContainer = 'veupathdb/gusenv:latest';
-             if({jsonData.class === "ApiCommonData::Load::IterativeWGCNAResults"}) {
-                 dynamicContainer = 'veupathdb/iterativewgcna:latest'
-             }
+            def dynamicContainer = 'veupathdb/gusenv:latest';
+            if(jsonData.class == "ApiCommonData::Load::IterativeWGCNAResults") {
+                dynamicContainer = 'veupathdb/iterativewgcna:latest'
+            }
             return [dynamicContainer, step_file]
         }
 
+    ordered_files.view()
+    
     DO_STEP(ordered_files, MAIN_WORKING_DIRECTORY.out)
     
 }
