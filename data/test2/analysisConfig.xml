@@ -1,0 +1,23 @@
+<xml>
+
+  <globalReferencable>
+    <property name="profileSetName" value="P. falciparum Su Seven Stages RNA Seq data"/> 
+    <property name="samples">
+        <value>Ring|ring</value> 
+        <value>Early Trophozoite|earlyTroph</value>
+        <value>Late Trophozoite|lateTroph</value>
+        <value>Schizont|schizont</value>
+        <value>Gametocyte II|gametocyteII</value>
+        <value>Gametocyte V|gametocyteV</value>
+        <value>Ookinete|ookinete</value>
+    </property>
+  </globalReferencable>
+
+  <step class="ApiCommonData::Load::RnaSeqAnalysisEbi">
+    <property name="profileSetName" isReference="1" value="$globalReferencable->{profileSetName}" />
+    <property name="samples" isReference="1" value="$globalReferencable->{samples}" />
+  </step>
+
+</xml>
+
+
