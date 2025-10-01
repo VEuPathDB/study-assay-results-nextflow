@@ -48,6 +48,10 @@ sub setMappingFileHasHeader    { $_[0]->{mappingFileHasHeader} = $_[1] }
 sub getTechnologyType          { $_[0]->{_technology_type} }
 sub setTechnologyType          { $_[0]->{_technology_type} = $_[1] }
 
+sub getGusConfigFile          { $_[0]->{_gus_config_file} }
+sub setGusConfigFile          { $_[0]->{_gus_config_file} = $_[1] }
+
+
 #--------------------------------------------------------------------------------
 
 my $MAP_HAS_HEADER = 0;

@@ -24,10 +24,11 @@ sub new {
     $args->{doNotLoad} = 1;
     $args->{outputFile} = $outputFile;
 
-
-   # unless($args->{inputSuffix}) {
-   #   CBIL::StudyAssayResults::Error->new("Missing required argument [inputSuffix]")->throw();
-   # }
+    # update this arg for new data structure
+    # we cannot change the arg at the command line since it is correct for the RnaSeqAnalysis module
+    my $mainDirectory = $args->{mainDirectory};
+    $mainDirectory = "${mainDirectory}/analysis_output";
+    $args->{mainDirectory} = $mainDirectory;
 
     my $self = $class->SUPER::new($args);
 
