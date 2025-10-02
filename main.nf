@@ -5,17 +5,9 @@ nextflow.preview.recursion = true
 nextflow.enable.dsl = 2
 
 import groovy.json.JsonSlurper;
+import groovy.xml.XmlSlurper;
 
 params.tpmDir = params.tpmDir ? params.tpmDir : "$projectDir/NO_FILE";
-
-//def containerMap = [:]
-def containerMap = [
-       1: 'veupathdb/gusenv:latest',
-       2: 'veupathdb/iterativewgcna:latest',
-   ]
-
-
-
 
 process PARSE_XML_CONFIG {
     container 'veupathdb/bioperl:latest'
@@ -34,7 +26,6 @@ process PARSE_XML_CONFIG {
     \$xmlParser->printToJsonFile();
     """
 }
-
 
 process MAIN_WORKING_DIRECTORY {
     container 'veupathdb/alpine_bash:latest'
@@ -63,15 +54,11 @@ process MAIN_WORKING_DIRECTORY {
         ln -s \$original_final main_working_directory/
         """
     }
-
 }
-
-
-
 
 process DO_STEP {
 
-    container { containerMap.get(stepNumber++) }
+    container { println containerMap; println stepNumber; containerMap.get(stepNumber++) }
 
     maxForks 1
 
@@ -80,6 +67,7 @@ process DO_STEP {
     path(remainingStepsFile, stageAs: "input_remaining_steps.json")
     path mainWorkingDirectory
     val stepNumber
+    val containerMap
 
     output:
     path "outputRemainingStepsFile.json", emit: remainingSteps
@@ -107,26 +95,45 @@ process NEXT_STEP {
     """
     nextStepFromJsonFile.pl $jsonFile nextStep.json remainingSteps.json
     """
-    
 }
 
 
 workflow {
-    
+
+    def stepNumber = 1; // this will be incremented by the recursion
+
+    def containerMap = [:]
+
+    def slurper = new XmlSlurper();
+    def parsedXml = slurper.parseText(file(params.analysisConfigFile).text)
+
+    if(parsedXml.step.size() < 1) {
+        throw new Exception("XML file must containe at least one step")
+    }
+
+    for (int i = 0; i < parsedXml.step.size(); i++) {
+        def xmlStep = parsedXml.step[i];
+        def containerName = 'veupathdb/gusenv:latest';
+
+        // notice the fancy syntax to get the attribute value
+        if(xmlStep.@class == "ApiCommonData::Load::IterativeWGCNAResults") {
+            containerName = 'veupathdb/iterativewgcna:latest'
+        }
+        def key = i + 1;
+        containerMap.put(key, containerName)
+    }
+
     analysisConfigXml = Channel.fromPath(params.analysisConfigFile, checkIfExists: true)
 
-    def stepNumber = 1;
+    MAIN_WORKING_DIRECTORY(params.finalDir, params.tpmDir).collect()
 
-    MAIN_WORKING_DIRECTORY(params.finalDir, params.tpmDir)
-
-    PARSE_XML_CONFIG(
+    stepsJson = PARSE_XML_CONFIG(
         analysisConfigXml
-    )
+    ).collect()
 
     ANALYZE_STEPS
-        .recurse(PARSE_XML_CONFIG.out.collect(), MAIN_WORKING_DIRECTORY.out, stepNumber)
-        .times (2)
-
+        .recurse(stepsJson, MAIN_WORKING_DIRECTORY.out, stepNumber, containerMap)
+        .times(parsedXml.step.size())
 }
 
 
@@ -135,48 +142,18 @@ workflow ANALYZE_STEPS {
     stepsJson
     mainWorkingDirectory
     stepNumber
-
+    containerMap
+    
     main:
     stepConfig = NEXT_STEP(stepsJson)
 
-    // withContainer = stepConfig.map { it ->
-    //     containerName = containerNameFromStep(it[0])
-    //     return [it[0], it[1], containerName]
-    // }
-
-//    containerName = stepConfig.nextStep.map { stepFile ->
-//        return containerNameFromStep(stepFile)
-//    }
-
-    DO_STEP(stepConfig, mainWorkingDirectory, stepNumber)
-
+    DO_STEP(stepConfig, mainWorkingDirectory, stepNumber, containerMap)
 
     emit:
     DO_STEP.out.remainingSteps
     DO_STEP.out.mainWorkingDirectory
     DO_STEP.out.stepNumber
+    containerMap
 }
 
 
-// def containerNameFromStep(stepJson) {
-//     def jsonSlurper = new JsonSlurper()
-//     def jsonData = jsonSlurper.parse(stepJson)
-//     def dynamicContainer = 'veupathdb/gusenv:latest';
-//     if(jsonData.class == "ApiCommonData::Load::IterativeWGCNAResults") {
-//         dynamicContainer = 'veupathdb/iterativewgcna:latest'
-//     }
-//     return dynamicContainer
-// }
-
-
-// def countSteps(stepJson) {
-//     def jsonSlurper = new JsonSlurper()
-//     def jsonData = jsonSlurper.parse(stepJson)
-//     if (jsonData instanceof List) {
-//         return jsonData.size()
-//     } else {
-//         // Handle case where jsonData is not an array, if necessary
-//         return 0
-//     }
-
-// }
