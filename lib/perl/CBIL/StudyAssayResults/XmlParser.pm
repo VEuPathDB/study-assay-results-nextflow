@@ -53,6 +53,22 @@ sub printToJsonFiles {
   }
 }
 
+sub printToJsonFile {
+  my ($self) = @_;
+
+  my $steps = $self->parse();
+
+  my $fileName = "steps.json"; 
+
+  open(OUT, ">$fileName") or die "Cannot open file $fileName for writing: $!";
+  my $json = encode_json($steps);
+  print OUT $json;
+
+  close OUT;
+}
+
+
+
 
 sub parse {
   my ($self) = @_;
