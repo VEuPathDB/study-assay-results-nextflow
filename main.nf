@@ -43,22 +43,22 @@ process MAIN_WORKING_DIRECTORY {
         mkdir -p main_working_directory/analysis_output
         original_final=\$(readlink -f $finalDir)
         original_tpm=\$(readlink -f $tpmDir)        
-        ln -s \$original_final main_working_directory/
-        ln -s \$original_tpm main_working_directory/
+        cp -r \$original_final main_working_directory/
+        cp -r \$original_tpm main_working_directory/
         """
     }
     else {
         """
         mkdir -p main_working_directory/analysis_output
         original_final=\$(readlink -f $finalDir)
-        ln -s \$original_final main_working_directory/
+        cp -r \$original_final main_working_directory/
         """
     }
 }
 
 process DO_STEP {
 
-    container { println containerMap; println stepNumber; containerMap.get(stepNumber++) }
+    container { containerMap.get(stepNumber++) }
 
     maxForks 1
 
@@ -77,7 +77,14 @@ process DO_STEP {
     script:
     """
     cp $remainingStepsFile outputRemainingStepsFile.json
-    touch outputRemainingStepsFile.json
+
+    # TODO: add optional input file here
+    # TODO: pseudogenes should be optional
+     doStep.pl --json_file $jsonFile \\
+         --main_directory \$PWD/$mainWorkingDirectory \\
+         --technology_type $params.technologyType \\
+         --pseudogenes_file $params.pseudogenesFile
+
     """
 }
 
@@ -114,10 +121,12 @@ workflow {
     for (int i = 0; i < parsedXml.step.size(); i++) {
         def xmlStep = parsedXml.step[i];
         def containerName = 'veupathdb/gusenv:latest';
+        
 
         // notice the fancy syntax to get the attribute value
         if(xmlStep.@class == "ApiCommonData::Load::IterativeWGCNAResults") {
-            containerName = 'veupathdb/iterativewgcna:latest'
+            containerName = 'jbrestel/iterativewgcna'
+//            containerName = 'veupathdb/iterativewgcna:latest'
         }
         def key = i + 1;
         containerMap.put(key, containerName)

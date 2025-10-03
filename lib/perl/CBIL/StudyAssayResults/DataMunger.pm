@@ -10,6 +10,8 @@ use CBIL::StudyAssayResults::Utils;
 use File::Basename;
 use File::Temp qw/ tempfile /;
 
+use Cwd;
+
 #--------------------------------------------------------------------------------
 
 sub getOutputFile           { $_[0]->{outputFile} }
@@ -48,8 +50,8 @@ sub setMappingFileHasHeader    { $_[0]->{mappingFileHasHeader} = $_[1] }
 sub getTechnologyType          { $_[0]->{_technology_type} }
 sub setTechnologyType          { $_[0]->{_technology_type} = $_[1] }
 
-sub getGusConfigFile          { $_[0]->{_gus_config_file} }
-sub setGusConfigFile          { $_[0]->{_gus_config_file} = $_[1] }
+sub getPseudogenesFile          { $_[0]->{_pseudogenes_file} }
+sub setPseudogenesFile          { $_[0]->{_pseudogenes_file} = $_[1] }
 
 
 #--------------------------------------------------------------------------------
@@ -65,6 +67,12 @@ sub new {
 
   if(my $mainDirectory = $args->{mainDirectory}) {
     chdir $mainDirectory;
+
+    print STDERR "MAIN_DIRECTORY: $mainDirectory\n";
+
+    my $dir = getcwd;
+    print STDERR "Current working directory: $dir\n";
+
   }
   else {
     CBIL::StudyAssayResults::Error->new("Main Directory was not provided")->throw();

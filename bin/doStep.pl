@@ -2,6 +2,9 @@
 
 use strict;
 
+# TODO: remove
+use lib "/home/jbrestel/project_home/study-assay-results-nextflow/lib/perl";
+
 use Getopt::Long;
 
 use JSON;
@@ -10,13 +13,14 @@ use CBIL::StudyAssayResults::Error;
 
 use Data::Dumper;
 
-my ($help, $jsonFile, $mainDirectory, $inputFile, $technologyType, );
+my ($help, $jsonFile, $mainDirectory, $inputFile, $technologyType, $pseudogenesFile);
 
 &GetOptions('help|h' => \$help,
             'json_file=s' => \$jsonFile,
             'main_directory=s' => \$mainDirectory,
             'input_file=s' => \$inputFile,
             'technology_type=s' => \$technologyType,
+            'pseudogenes_file=s' => \$pseudogenesFile,
            );
 
 unless(-e $jsonFile) {
@@ -28,62 +32,54 @@ unless(-d $mainDirectory) {
 }
 
 open my $fh, '<', $jsonFile or die "Could not open file '$jsonFile': $!";
-local $/; # Enable 'slurp' mode
-my $jsonText = <$fh>;
+
+my $jsonText;
+while(<$fh>) {
+  $jsonText .= $_;
+}
+
 close $fh;
 
 # Decode the JSON text into a Perl object
 my $jsonParser = JSON->new;
 my $stepObj = $jsonParser->decode($jsonText);
 
+my $args = $stepObj->{arguments};
+my $class = $stepObj->{class};
 
-print Dumper $stepObj;
+while ( my ($key, $value) = each(%$args) ) {
+  if ($value =~m/^no$/i || $value =~m/^false$/i ) {
+    $args->{ $key } = 0;
+  }
+  elsif ($value =~m/^yes$/i || $value =~m/^true$/i ) {
+    $args->{ $key } = 1;
+  }
+}
 
-die"";
+$args->{mainDirectory} = $mainDirectory;
 
+unless($args->{inputFile}) {
+  $args->{inputFile} = $inputFile;
+}
 
+eval "require $class";
+CBIL::StudyAssayResults::Error->new($@)->throw() if $@;
+my $dataMunger = eval {
+  $class->new($args);
+};
 
-# foreach my $node (@$nodes) {
-#   my $args = $node->{arguments};
-#   my $class = $node->{class};
+CBIL::StudyAssayResults::Error->new($@)->throw() if $@;
 
-#   while ( my ($key, $value) = each(%$args) ) {
-#     if ($value =~m/^no$/i || $value =~m/^false$/i ) {
-#       $args->{ $key } = 0;
-#     }
-#     elsif ($value =~m/^yes$/i || $value =~m/^true$/i ) {
-#       $args->{ $key } = 1;
-#     }
-#   }
-
-#   if (defined $seqIdPrefix) { $args->{seqIdPrefix} = $seqIdPrefix; }
-#   if ($patch) { $args->{patch} = 1; }
-
-#   $args->{mainDirectory} = $mainDirectory;
-
-#   unless($args->{inputFile}) {
-#     $args->{inputFile} = $inputFile;
-#   }
-
-#   eval "require $class";
-#   CBIL::StudyAssayResults::Error->new($@)->throw() if $@;
-#   my $dataMunger = eval {
-#     $class->new($args);
-#   };
-
-#   CBIL::StudyAssayResults::Error->new($@)->throw() if $@;
-
-#   $dataMunger->setTechnologyType($technologyType);
-#   $dataMunger->setGusConfigFile($gusConfigFile) if($gusConfigFile);
-#   $dataMunger->munge();
-# }
+$dataMunger->setTechnologyType($technologyType);
+$dataMunger->setPseudogenesFile($pseudogenesFile) if($pseudogenesFile);
+$dataMunger->munge();
 
 sub usage {
   my $m = shift;
 
   print STDERR "$m\n\n" if($m);
-  print STDERR "usage:  perl doStudyAssayResults.pl --xml_file <XML> --main_directory <DIR> [--input_file <FILE>] [--seq_id_prefix <SEQ ID PREFIX>] [--patch <use this flag for a patch update>]--help\n";
-  exit;
+  die "usage:  perl doStep.pl --xml_file <XML> --main_directory <DIR> [--input_file <FILE>] --help\n";
+  
 }
 
 
