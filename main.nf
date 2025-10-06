@@ -125,8 +125,7 @@ workflow {
 
         // notice the fancy syntax to get the attribute value
         if(xmlStep.@class == "ApiCommonData::Load::IterativeWGCNAResults") {
-            containerName = 'jbrestel/iterativewgcna'
-//            containerName = 'veupathdb/iterativewgcna:latest'
+            containerName = 'veupathdb/iterativewgcna:latest'
         }
         def key = i + 1;
         containerMap.put(key, containerName)
