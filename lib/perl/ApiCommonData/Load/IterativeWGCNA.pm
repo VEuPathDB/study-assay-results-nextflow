@@ -12,7 +12,7 @@ use DBD::Oracle;
 use File::Temp qw/ tempfile /;
 use Data::Dumper;
 
-use lib "$ENV{GUS_HOME}/lib/perl";
+#use lib "$ENV{GUS_HOME}/lib/perl";
 use warnings;
 use GUS::ObjRelP::DbiDatabase;
 

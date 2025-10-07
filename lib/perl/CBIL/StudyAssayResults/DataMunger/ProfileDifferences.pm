@@ -46,7 +46,7 @@ sub munge {
 
   my $rString = <<RString;
 
-source("$ENV{GUS_HOME}/lib/R/StudyAssayResults/profile_functions.R");
+source("$ENV{MY_R_LIB}/StudyAssayResults/profile_functions.R");
 
 dat1 = read.table("$minuendFile", header=$header, sep="\\t", check.names=FALSE, row.names=1);
 dat2 = read.table("$subtrahendFile", header=$header, sep="\\t", check.names=FALSE, row.names=1);

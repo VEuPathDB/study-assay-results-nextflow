@@ -136,7 +136,7 @@ load.marray = library(marray, logical.return=TRUE);
 
 if(load.marray) {
 
-source("$ENV{GUS_HOME}/lib/R/StudyAssayResults/normalization_functions.R");
+source("$ENV{MY_R_LIB}/StudyAssayResults/normalization_functions.R");
 
 my.layout = read.marrayLayout(ngr=$ngr, ngc=$ngc, nsr=$nsr, nsc=$nsc);
 my.gnames = read.marrayInfo("$mappingFile", info.id=c(1,2), labels=1, na.strings=c(""))

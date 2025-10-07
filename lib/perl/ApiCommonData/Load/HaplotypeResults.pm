@@ -24,7 +24,7 @@ sub writeRScript {
 
   my $rString = <<RString;
 
-source("$ENV{GUS_HOME}/lib/R/StudyAssayResults/profile_functions.R");
+source("$ENV{MY_R_LIB}/StudyAssayResults/profile_functions.R");
 
 dat = read.table("$inputFile", header=T, sep="\\t", check.names=FALSE);
 

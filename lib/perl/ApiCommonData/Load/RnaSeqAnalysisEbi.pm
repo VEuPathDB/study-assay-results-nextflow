@@ -1,5 +1,5 @@
 package ApiCommonData::Load::RnaSeqAnalysisEbi;
-use lib "$ENV{GUS_HOME}/lib/perl";
+#use lib "$ENV{GUS_HOME}/lib/perl";
 use base qw(CBIL::StudyAssayResults::DataMunger);
 
 

@@ -108,7 +108,7 @@ sub parseBiomFile {
 
 file_input = "$inputFile";
 file_output = "$dataFile";
-#source("$ENV{GUS_HOME}/lib/R/StudyAssayResults/parse_biom.R");
+#source("$ENV{MY_R_LIB}/StudyAssayResults/parse_biom.R");
 library(biomformat)
 biom.obj = read_biom(file_input);
 

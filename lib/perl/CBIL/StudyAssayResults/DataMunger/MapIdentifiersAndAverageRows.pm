@@ -142,7 +142,7 @@ sub writeRScript {
   my ($rfh, $rFile) = tempfile();
 
   my $rString = <<RString;
-source("$ENV{GUS_HOME}/lib/R/StudyAssayResults/normalization_functions.R");
+source("$ENV{MY_R_LIB}/StudyAssayResults/normalization_functions.R");
 
 # reading in the mapping file; in which the 2nd coln is the gene_list...
 idMap = read.table("$mappingFile", sep="\\t", header=TRUE, na.strings=c(""));
