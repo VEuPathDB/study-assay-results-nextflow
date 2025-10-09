@@ -7,7 +7,9 @@ nextflow.enable.dsl = 2
 import groovy.json.JsonSlurper;
 import groovy.xml.XmlSlurper;
 
-params.tpmDir = params.tpmDir ? params.tpmDir : "$projectDir/NO_FILE";
+params.tpmDir = params.tpmDir ? params.tpmDir : "$projectDir/NO_TPM_DIR";
+params.inputFile = params.inputFile ? params.inputFile : "$projectDir/NO_INPUT_FILE";
+params.pseudogenesFile = params.pseudogenesFile ? params.pseudogenesFile : "$projectDir/NO_PSEUDOGENES_FILE";
 
 process PARSE_XML_CONFIG {
     container 'veupathdb/bioperl:latest'
@@ -36,9 +38,10 @@ process MAIN_WORKING_DIRECTORY {
 
     output:
     path "main_working_directory"
-    
+
     script:
-    if(tpmDir.name != "NO_FILE") {
+    // the expected directory structure is special for rnaseq
+    if(tpmDir.name != "NO_TPM_DIR") {
         """
         mkdir -p main_working_directory/analysis_output
         original_final=\$(readlink -f $finalDir)
@@ -47,11 +50,12 @@ process MAIN_WORKING_DIRECTORY {
         cp -r \$original_tpm main_working_directory/
         """
     }
+    // here we are in normal mode (coyp input files from "final" into workingDirectory (analysis_output))
     else {
         """
-        mkdir -p main_working_directory/analysis_output
+        mkdir main_working_directory
         original_final=\$(readlink -f $finalDir)
-        cp -r \$original_final main_working_directory/
+        cp -r \$original_final main_working_directory/analysis_output
         """
     }
 }
@@ -68,24 +72,41 @@ process DO_STEP {
     path mainWorkingDirectory
     val stepNumber
     val containerMap
+    path inputFile
+    path pseudogenesFile
+
 
     output:
     path "outputRemainingStepsFile.json", emit: remainingSteps
     path mainWorkingDirectory, emit: mainWorkingDirectory
     val stepNumber, emit: stepNumber
 
+
     script:
-    """
-    cp $remainingStepsFile outputRemainingStepsFile.json
+    
+    def pseudogenes_file_arg = pseudogenesFile.name != "NO_PSEUDOGENES_FILE" ? "" : "--pseudogenes_file " + pseudogenesFile.name;
+    def input_file_arg = inputFile.name != "NO_INPUT_FILE" ? "" : "--input_file " + inputFile.name;
+    
+    // here we are in rnaseq mode
+    if(tpmDir.name != "NO_TPM_DIR") {
+        """
+        cp $remainingStepsFile outputRemainingStepsFile.json
 
-    # TODO: add optional input file here
-    # TODO: pseudogenes should be optional
-     doStep.pl --json_file $jsonFile \\
-         --main_directory \$PWD/$mainWorkingDirectory \\
-         --technology_type $params.technologyType \\
-         --pseudogenes_file $params.pseudogenesFile
+        doStep.pl --json_file $jsonFile \\
+            --main_directory \$PWD/$mainWorkingDirectory \\
+            --technology_type $params.technologyType $input_file_arg $pseudogenes_file_arg
+        """
+    }
+    // this is normal mode
+    else {
+        """
+        cp $remainingStepsFile outputRemainingStepsFile.json
 
-    """
+        doStep.pl --json_file $jsonFile \\
+            --main_directory \$PWD/$mainWorkingDirectory/analysis_output \\
+            --technology_type $params.technologyType $input_file_arg $pseudogenes_file_arg
+        """
+    }
 }
 
 process NEXT_STEP {
@@ -104,6 +125,23 @@ process NEXT_STEP {
     """
 }
 
+process PUBLISH_ARTIFACT {
+    container 'veupathdb/alpine_bash:latest'
+
+    publishDir "$params.outputDirectory", mode: 'copy'
+    
+    input:
+    path results, stageAs: "publish_artifact"
+
+    output:
+    path "analysis_output"
+
+    script:
+    """
+    ln -s publish_artifact ./analysis_output
+    echo DONE!
+    """
+}
 
 workflow {
 
@@ -139,9 +177,17 @@ workflow {
         analysisConfigXml
     ).collect()
 
-    ANALYZE_STEPS
-        .recurse(stepsJson, MAIN_WORKING_DIRECTORY.out, stepNumber, containerMap)
-        .times(parsedXml.step.size())
+
+    if(parsedXml.step.size() == 1) {
+      ANALYZE_STEPS(stepsJson, MAIN_WORKING_DIRECTORY.out, stepNumber, containerMap)
+    }
+    else {
+        ANALYZE_STEPS
+            .recurse(stepsJson, MAIN_WORKING_DIRECTORY.out, stepNumber, containerMap)
+            .times(parsedXml.step.size())
+    }
+
+    PUBLISH_ARTIFACT(ANALYZE_STEPS.out.mainWorkingDirectory)
 }
 
 
@@ -155,13 +201,13 @@ workflow ANALYZE_STEPS {
     main:
     stepConfig = NEXT_STEP(stepsJson)
 
-    DO_STEP(stepConfig, mainWorkingDirectory, stepNumber, containerMap)
+    DO_STEP(stepConfig, mainWorkingDirectory, stepNumber, containerMap, params.inputFile, params.pseudogenesFile)
 
     emit:
-    DO_STEP.out.remainingSteps
-    DO_STEP.out.mainWorkingDirectory
-    DO_STEP.out.stepNumber
-    containerMap
+    remainingSteps = DO_STEP.out.remainingSteps
+    mainWorkingDirectory = DO_STEP.out.mainWorkingDirectory
+    stepNumber = DO_STEP.out.stepNumber
+    containerMap = containerMap
 }
 
 
