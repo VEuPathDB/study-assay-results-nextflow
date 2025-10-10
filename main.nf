@@ -72,6 +72,7 @@ process DO_STEP {
     path mainWorkingDirectory
     val stepNumber
     val containerMap
+    path tpmDir
     path inputFile
     path pseudogenesFile
 
@@ -131,14 +132,14 @@ process PUBLISH_ARTIFACT {
     publishDir "$params.outputDirectory", mode: 'copy'
     
     input:
-    path results, stageAs: "publish_artifact"
+    path mainWorkingDirectory, stageAs: "publish_artifact"
 
     output:
     path "analysis_output"
 
     script:
     """
-    ln -s publish_artifact ./analysis_output
+    ln -s publish_artifact/analysis_output ./analysis_output
     echo DONE!
     """
 }
@@ -201,7 +202,7 @@ workflow ANALYZE_STEPS {
     main:
     stepConfig = NEXT_STEP(stepsJson)
 
-    DO_STEP(stepConfig, mainWorkingDirectory, stepNumber, containerMap, params.inputFile, params.pseudogenesFile)
+    DO_STEP(stepConfig, mainWorkingDirectory, stepNumber, containerMap, params.tpmDir, params.inputFile, params.pseudogenesFile)
 
     emit:
     remainingSteps = DO_STEP.out.remainingSteps
