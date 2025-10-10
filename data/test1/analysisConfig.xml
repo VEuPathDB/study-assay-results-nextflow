@@ -1,0 +1,72 @@
+<xml>
+  <globalReferencable>
+    <property name="profileSetName" value="Test profileset name"/>
+    <property name="samples">
+      <value>CH_1002|ERR3470491</value>
+      <value>CH_1014|ERR3470495</value>
+      <value>CH_142|ERR3470496</value>
+      <value>CH_148|ERR3470497</value>
+      <value>CH_426|ERR3470499</value>
+      <value>CH_477|ERR3470501</value>
+      <value>CH_484|ERR3470502</value>
+      <value>CH_488|ERR3470503</value>
+      <value>CH_499|ERR3470492</value>
+      <value>CH_505|ERR3470493</value>
+      <value>CH_513|ERR3470494</value>
+      <value>CM_149|ERR3470484</value>
+      <value>CM_207|ERR3470486</value>
+      <value>CM_497|ERR3470487</value>
+      <value>CM_503|ERR3470488</value>
+      <value>CM_88|ERR3470490</value>
+      <value>HL_1026|ERR3470504</value>
+      <value>HL_133|ERR3470505</value>
+      <value>HL_157|ERR3470506</value>
+      <value>HL_171|ERR3470507</value>
+      <value>HL_307|ERR3470508</value>
+      <value>HL_551|ERR3470510</value>
+      <value>HL_998|ERR3470511</value>
+      <value>UM_301|ERR3470512</value>
+      <value>UM_302|ERR3470514</value>
+      <value>UM_309|ERR3470515</value>
+      <value>UM_314|ERR3470516</value>
+      <value>UM_326|ERR3470517</value>
+      <value>UM_330|ERR3470519</value>
+      <value>UM_333|ERR3470520</value>
+      <value>UM_365|ERR3470521</value>
+      <value>UM_380|ERR3470522</value>
+      <value>UM_381|ERR3470523</value>
+      <value>UM_423|ERR3470524</value>
+      <value>UM_427|ERR3470526</value>
+      <value>UM_434|ERR3470527</value>
+      <value>UM_470|ERR3470528</value>
+      <value>UM_476|ERR3470529</value>
+      <value>UM_485|ERR3470530</value>
+      <value>UM_492|ERR3470531</value>
+      <value>UM_572|ERR3470532</value>
+      <value>UM_591|ERR3470535</value>
+      <value>UM_602|ERR3470536</value>
+    </property>
+  </globalReferencable>
+
+
+  <step class="ApiCommonData::Load::RnaSeqAnalysisEbi">
+   <property name="profileSetName" isReference="1" value="$globalReferencable->{profileSetName}" />
+    <property name="samples" isReference="1" value="$globalReferencable->{samples}" />
+    <property name="isStrandSpecific" value="1"/>
+  </step>
+
+  <step class="ApiCommonData::Load::IterativeWGCNAResults">
+    <property name="profileSetName" value="WGCNA Dual transcriptomes of malaria-infected Gambian children firststrand" />
+    <property name="inputFile" value="profiles.genes.htseq-union.firststrand.tpm" />
+    <property name="softThresholdPower" value="10" />
+    <property name="organism" value="Plasmodium falciparum 3D7" />
+    <property name="inputSuffixMM" value="[module - membership - firststrand - tpm - unique]" />
+    <property name="inputSuffixME" value="[module - eigengene - firststrand - tpm - unique]" />
+    <property name="technologyType" value="RNASeq" />
+    <property name="threshold" value="1" />
+    <property name="valueType" value="tpm" />
+    <property name="quantificationType" value="htseq-union" />
+  </step>
+
+
+</xml>
