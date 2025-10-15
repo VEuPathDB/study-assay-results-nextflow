@@ -169,8 +169,7 @@ process PUBLISH_ARTIFACT {
 
 
 process MERGE_BIGWIG {
-    container 'jbrestel/shortreadaligner'
-    //container 'veupathdb/shortreadaligner:latest'
+    container 'veupathdb/shortreadaligner:latest'
 
     input:
     path mainWorkingDirectory, stageAs: "mergeBigwigWorkDir"
@@ -189,8 +188,7 @@ process MERGE_BIGWIG {
 
 
 process NORMALIZE_COVERAGE {
-    container 'jbrestel/shortreadaligner'
-    //container 'veupathdb/shortreadaligner:latest'
+    container 'veupathdb/shortreadaligner:latest'
 
     input:
     path mainWorkingDirectory, stageAs: "workDir"
@@ -208,8 +206,7 @@ process NORMALIZE_COVERAGE {
 }
 
 process FIX_CONFIG {
-    container 'jbrestel/shortreadaligner'
-    //container 'veupathdb/shortreadaligner:latest'
+    container 'veupathdb/shortreadaligner:latest'
 
     input:
     path mainWorkingDirectory, stageAs: "fixConfigWorkDir"
@@ -273,16 +270,14 @@ workflow {
     FIX_CONFIG(ANALYZE_STEPS.out.mainWorkingDirectory.last())
     
     // this means we are in RNASeq Context so we'll normalize the bedgraph files and merge
-    // if(params.tpmDir != "NO_TPM_DIR") {
-    //     NORMALIZE_COVERAGE(FIX_CONFIG.out, params.chromosomeSizeFile, params.analysisConfigFile)
-    //     MERGE_BIGWIG(NORMALIZE_COVERAGE.out, params.chromosomeSizeFile, params.analysisConfigFile)
-    //     PUBLISH_ARTIFACT(MERGE_BIGWIG.out, params.tpmDir)
-    // }
-    // else {
-    //     PUBLISH_ARTIFACT(FIX_CONFIG.out, params.tpmDir)
-    // }
-
-
+    if(params.tpmDir != "NO_TPM_DIR") {
+        NORMALIZE_COVERAGE(FIX_CONFIG.out, params.chromosomeSizeFile, params.analysisConfigFile)
+        MERGE_BIGWIG(NORMALIZE_COVERAGE.out, params.chromosomeSizeFile, params.analysisConfigFile)
+        PUBLISH_ARTIFACT(MERGE_BIGWIG.out, params.tpmDir)
+    }
+    else {
+        PUBLISH_ARTIFACT(FIX_CONFIG.out, params.tpmDir)
+    }
     
 }
 
