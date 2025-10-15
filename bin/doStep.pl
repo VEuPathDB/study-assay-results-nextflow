@@ -2,6 +2,9 @@
 
 use strict;
 
+# must use a GUS Env for this script (veupathdb/gusenv:latest)
+use lib "$ENV{GUS_HOME}/lib/perl";
+
 use Getopt::Long;
 
 use JSON;

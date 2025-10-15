@@ -85,17 +85,24 @@ process DO_STEP {
 
     script:
     
-    def pseudogenes_file_arg = pseudogenesFile.name != "NO_PSEUDOGENES_FILE" ? "" : "--pseudogenes_file " + pseudogenesFile.name;
-    def input_file_arg = inputFile.name != "NO_INPUT_FILE" ? "" : "--input_file " + inputFile.name;
+    def pseudogenes_file_arg = pseudogenesFile.name == "NO_PSEUDOGENES_FILE" ? "" : "--pseudogenes_file " + "\$PWD/" + "/" + pseudogenesFile;
+    def input_file_arg = inputFile.name == "NO_INPUT_FILE" ? "" : "--input_file " +  "\$PWD/" + inputFile.name;
     
     // here we are in rnaseq mode
-    if(tpmDir.name != "NO_TPM_DIR") {
+    // This ONLY happens for RNASeqAnalysisEbi which MUST be the first step in the rnaseq xml
+    if(tpmDir.name != "NO_TPM_DIR" || stepNumber > 1) {
         """
         cp $remainingStepsFile outputRemainingStepsFile.json
 
         doStep.pl --json_file $jsonFile \\
             --main_directory \$PWD/$mainWorkingDirectory \\
             --technology_type $params.technologyType $input_file_arg $pseudogenes_file_arg
+
+        WRONG_CONFIG=\$PWD/$mainWorkingDirectory/insert_study_results_config.txt
+        if [ -e "\$WRONG_CONFIG" ]; then
+          echo "Error: \$WRONG_CONFIG exists in the wrong directory"
+          exit 1
+        fi
         """
     }
     // this is normal mode
@@ -130,19 +137,93 @@ process PUBLISH_ARTIFACT {
     container 'veupathdb/alpine_bash:latest'
 
     publishDir "$params.outputDirectory", mode: 'copy'
-    
+
     input:
     path mainWorkingDirectory, stageAs: "publish_artifact"
-
+    path tpmDir
+    
     output:
     path "analysis_output"
+    path "normalize_coverage", optional: true
+    path "mergedBigwigs", optional: true
+
+    script:
+    // here we are in rnaseq mode
+    if(tpmDir.name != "NO_TPM_DIR") {
+        """
+        ln -s publish_artifact/analysis_output ./analysis_output
+        ln -s publish_artifact/normalize_coverage ./normalize_coverage
+        ln -s publish_artifact/mergedBigwigs ./mergedBigwigs
+        echo DONE!
+        """
+    }
+    else {
+        """
+        ln -s publish_artifact/analysis_output ./analysis_output
+        echo DONE!
+        """
+    }
+}
+
+
+
+
+process MERGE_BIGWIG {
+    container 'jbrestel/shortreadaligner'
+    //container 'veupathdb/shortreadaligner:latest'
+
+    input:
+    path mainWorkingDirectory, stageAs: "mergeBigwigWorkDir"
+    path seqSizes
+    path analysisConfigXml
+
+    output:
+    path "mergeBigwigWorkDir"
 
     script:
     """
-    ln -s publish_artifact/analysis_output ./analysis_output
-    echo DONE!
+    rnaseqMerge.pl --dir \$PWD/mergeBigwigWorkDir --chromSize $seqSizes --analysisConfig $analysisConfigXml
     """
+
 }
+
+
+process NORMALIZE_COVERAGE {
+    container 'jbrestel/shortreadaligner'
+    //container 'veupathdb/shortreadaligner:latest'
+
+    input:
+    path mainWorkingDirectory, stageAs: "workDir"
+    path seqSizes
+    path analysisConfigXml
+
+    output:
+    path "workDir"
+
+    script:
+    """
+    normalizeCoverage.pl --inputDir \$PWD/workDir --seqSizeFile $seqSizes --analysisConfig $analysisConfigXml
+    """
+
+}
+
+process FIX_CONFIG {
+    container 'jbrestel/shortreadaligner'
+    //container 'veupathdb/shortreadaligner:latest'
+
+    input:
+    path mainWorkingDirectory, stageAs: "fixConfigWorkDir"
+
+    output:
+    path "fixConfigWorkDir"
+
+    script:
+    """
+    fixConfigPaths.pl \$PWD/fixConfigWorkDir/analysis_output/insert_study_results_config.txt  $params.outputDirectory 
+    """
+
+}
+
 
 workflow {
 
@@ -188,7 +269,21 @@ workflow {
             .times(parsedXml.step.size())
     }
 
-    PUBLISH_ARTIFACT(ANALYZE_STEPS.out.mainWorkingDirectory)
+
+    FIX_CONFIG(ANALYZE_STEPS.out.mainWorkingDirectory.last())
+    
+    // this means we are in RNASeq Context so we'll normalize the bedgraph files and merge
+    // if(params.tpmDir != "NO_TPM_DIR") {
+    //     NORMALIZE_COVERAGE(FIX_CONFIG.out, params.chromosomeSizeFile, params.analysisConfigFile)
+    //     MERGE_BIGWIG(NORMALIZE_COVERAGE.out, params.chromosomeSizeFile, params.analysisConfigFile)
+    //     PUBLISH_ARTIFACT(MERGE_BIGWIG.out, params.tpmDir)
+    // }
+    // else {
+    //     PUBLISH_ARTIFACT(FIX_CONFIG.out, params.tpmDir)
+    // }
+
+
+    
 }
 
 

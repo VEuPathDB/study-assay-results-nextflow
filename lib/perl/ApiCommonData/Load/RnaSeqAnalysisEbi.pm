@@ -5,10 +5,10 @@ use base qw(CBIL::StudyAssayResults::DataMunger);
 
 use strict;
 use CBIL::StudyAssayResults::Error;
-use ApiCommonData::Load::RnaSeqCounts;
 
+use ApiCommonData::Load::RnaSeqCounts;
 use ApiCommonData::Load::IntronJunctionsEbi;
-use ApiCommonData::Load::DeseqAnalysisEbi;
+
 use Data::Dumper;
 
 
@@ -23,7 +23,7 @@ sub getIsStrandSpecific        { $_[0]->{isStrandSpecific} }
 sub getSeqIdPrefix             { $_[0]->{seqIdPrefix}}
 sub getPatch                   {$_[0]->{patch} }
 
-sub getSkipDeSeq                { $_[0]->{skipDeSeq} }
+
 #-------------------------------------------------------------------------------
 sub new {
     my ($class, $args) = @_;
@@ -51,7 +51,7 @@ sub munge {
     my $profileSetName = $self->getProfileSetName();
 
 
-    my $skipDeSeq = $self->getSkipDeSeq();
+
     my $patch = $self->getPatch();
     
     if (! $patch) {

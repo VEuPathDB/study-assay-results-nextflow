@@ -8,11 +8,10 @@ use ApiCommonData::Load::AnalysisConfigRepeatFinder qw(displayAndBaseName);
 
 use Data::Dumper;
 
-my ($help, $dir, $experimentName, $chromSize, $analysisConfig);
+my ($help, $dir, $chromSize, $analysisConfig);
 
 &GetOptions('help|h' => \$help,
             'dir=s' => \$dir,
-            'experimentName=s' => \$experimentName,
 	        'chromSize=s' => \$chromSize,
             'analysisConfig=s' => \$analysisConfig,
             );
@@ -52,18 +51,18 @@ my $outDir = "$dir/mergedBigwigs";
 
 if ( grep( /firststrand/, @list ) ) {
   my @firstStrandFileList = grep /firststrand/, @list;
-  &convertBigwig(\@firstStrandFileList, $outDir, $chromSize, $experimentName, "firststrand");
+  &convertBigwig(\@firstStrandFileList, $outDir, $chromSize, "firststrand");
 }
 if ( grep( /secondstrand/, @list ) ) {
   my @secondStrandFileList = grep /secondstrand/, @list;
-  &convertBigwig(\@secondStrandFileList, $outDir, $chromSize, $experimentName, "secondstrand");
+  &convertBigwig(\@secondStrandFileList, $outDir, $chromSize, "secondstrand");
 }
 else{
-  &convertBigwig(\@list, $outDir, $chromSize, $experimentName, "unstranded");
+  &convertBigwig(\@list, $outDir, $chromSize, "unstranded");
 }
 
 sub convertBigwig {
-    my ($fileList, $outDir, $chromSize, $experimentName, $pattern) = @_;
+    my ($fileList, $outDir, $chromSize, $pattern) = @_;
 
     my $fileNames = join ' ', @$fileList;
     #Check if more than 1 input bigwig file
@@ -72,13 +71,13 @@ sub convertBigwig {
     &runCmd($cmd);
 
 	&sortBedGraph ("$outDir\/out\.bedGraph");
-    my $convertCmd = "bedGraphToBigWig $outDir/out.bedGraph $chromSize $outDir/$experimentName\_$pattern\_merged.bw";
+    my $convertCmd = "bedGraphToBigWig $outDir/out.bedGraph $chromSize $outDir/$pattern\_merged.bw";
     &runCmd($convertCmd);
     unlink "$outDir/out.bedGraph";
     }
     #If only one bigwig file copy to outdir
     else{
-    my $cpCmd = "cp $fileNames $outDir/$experimentName\_$pattern\_merged.bw";
+    my $cpCmd = "cp $fileNames $outDir/$pattern\_merged.bw";
     &runCmd($cpCmd);   
     } 
 }
