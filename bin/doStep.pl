@@ -2,9 +2,6 @@
 
 use strict;
 
-# TODO: remove
-use lib "/home/jbrestel/project_home/study-assay-results-nextflow/lib/perl";
-
 use Getopt::Long;
 
 use JSON;
