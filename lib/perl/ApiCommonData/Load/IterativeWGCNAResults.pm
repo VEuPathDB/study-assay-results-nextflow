@@ -29,7 +29,10 @@ sub new {
   # update main directory to new data structure
   # cannot update arg at command line because it is correct for RnaSeqAnalysis Module
   my $mainDirectory = $args->{mainDirectory};
-  $mainDirectory = "${mainDirectory}/analysis_output";
+  if(-e "${mainDirectory}/analysis_output") {
+	  $mainDirectory = "${mainDirectory}/analysis_output";
+  }
+
   $args->{mainDirectory} = $mainDirectory;
 
   my $self = $class->SUPER::new($args) ;          

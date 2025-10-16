@@ -2,8 +2,8 @@
 
 use strict;
 
-# TODO: remove
-use lib "/home/jbrestel/project_home/study-assay-results-nextflow/lib/perl";
+# must use a GUS Env for this script (veupathdb/gusenv:latest)
+use lib "$ENV{GUS_HOME}/lib/perl";
 
 use Getopt::Long;
 
