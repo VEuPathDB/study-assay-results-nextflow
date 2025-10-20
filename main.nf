@@ -244,6 +244,9 @@ workflow {
         if(xmlStep.@class == "ApiCommonData::Load::IterativeWGCNAResults") {
             containerName = 'veupathdb/iterativewgcna:latest'
         }
+        if(xmlStep.@class == "ApiCommonData::Load::SpliceSiteAnalysis") {
+            containerName = 'veupathdb/shortreadaligner'
+        } 
         def key = i + 1;
         containerMap.put(key, containerName)
     }
@@ -270,7 +273,7 @@ workflow {
     FIX_CONFIG(ANALYZE_STEPS.out.mainWorkingDirectory.last())
     
     // this means we are in RNASeq Context so we'll normalize the bedgraph files and merge
-    if(params.tpmDir != "NO_TPM_DIR") {
+    if(params.tpmDir != "$projectDir/NO_TPM_DIR") {
         NORMALIZE_COVERAGE(FIX_CONFIG.out, params.chromosomeSizeFile, params.analysisConfigFile)
         MERGE_BIGWIG(NORMALIZE_COVERAGE.out, params.chromosomeSizeFile, params.analysisConfigFile)
         PUBLISH_ARTIFACT(MERGE_BIGWIG.out, params.tpmDir)
