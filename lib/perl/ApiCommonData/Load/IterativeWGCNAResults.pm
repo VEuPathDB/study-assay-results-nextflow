@@ -46,6 +46,8 @@ use CBIL::StudyAssayResults::DataMunger::NoSampleConfigurationProfiles;
 
 use Data::Dumper;
 
+use Time::Piece;
+
 # Constants
 use constant {
     STRAND => 'firststrand',
@@ -59,7 +61,7 @@ use constant {
 
 # Accessor methods
 sub getPower        { $_[0]->{softThresholdPower} }
-sub getOrganism        { $_[0]->{organism} }
+sub getOrganismAbbrev        { $_[0]->{organismAbbrev} }
 sub getInputSuffixMM              { $_[0]->{inputSuffixMM} }
 sub getInputSuffixME              { $_[0]->{inputSuffixME} }
 sub getInputSampleSuffix              { $_[0]->{inputSampleSuffix} }
@@ -69,7 +71,7 @@ sub getTechnologyType              { $_[0]->{technologyType} }
 sub getThreshold              { $_[0]->{threshold} }
 sub getValueType              { $_[0]->{valueType} }
 sub getQuantificationType              { $_[0]->{quantificationType} }
-
+sub getSamples                 { $_[0]->{samples} }
 
 #-------------------------------------------------------------------------------
 sub new {
@@ -103,20 +105,21 @@ sub munge {
     my $pseudogenes = $self->_loadPseudogenes();
 
     # Preprocess input file and get sample names
-    print "Using the first strand and excluding pseudogenes\n";
+    print STDERR "Using the first strand and excluding pseudogenes\n";
     my ($preprocessedFile, $inputSamples) = $self->_preprocessInputFile($pseudogenes);
 
     # Run WGCNA analysis
     my $outputDirFullPath = $self->_runWGCNAAnalysis($preprocessedFile);
 
+    # Process module eigengenes
+    my $eigengeneNameHash = $self->_processModuleEigengenes($outputDirFullPath, $mainDirectory, $profileSetName);
+    
     # Parse and save module membership results
-    my ($modules, $files) = $self->_parseModuleMembership($outputDirFullPath, $inputSamples);
+    my ($modules, $files) = $self->_parseModuleMembership($outputDirFullPath, $eigengeneNameHash);
 
     # Configure module membership for loading
     $self->_configureModuleMembership($modules, $files, $inputSamples, $profileSetName);
 
-    # Process module eigengenes
-    $self->_processModuleEigengenes($outputDirFullPath, $mainDirectory, $profileSetName);
 }
 
 #-------------------------------------------------------------------------------
@@ -150,6 +153,8 @@ sub _preprocessInputFile {
     my $threshold = $self->getThreshold();
     my $preprocessedFile = "Preprocessed_" . $inputFile;
 
+    my $samplesHash = $self->groupListHashRef($self->getSamples());
+
     open(my $in, '<', $inputFile)
         or die "Couldn't open file $inputFile for reading: $!";
     open(my $out, '>', "$mainDirectory/$preprocessedFile")
@@ -163,13 +168,20 @@ sub _preprocessInputFile {
         if ($. == 1) {
             # Process header line
             my @headers = split("\t", $line);
-            print $out join("\t", @headers) . "\n";
 
-            # Clean whitespace and collect sample names
-            @headers = map { s/^\s+|\s+$//g; $_ } @headers;
+            my @origHeaders;
+            push @origHeaders, shift(@headers);
+
             foreach my $header (@headers) {
-                $inputSamples{$header} = 1 if $header =~ /\S/;
+
+                
+                die "Require 1:1 sample name mapping". Dumper $samplesHash unless(scalar @{$samplesHash->{$header}} == 1);
+                my $origName = $samplesHash->{$header}->[0];
+                push @origHeaders, $origName;
             }
+
+            print $out join("\t", @origHeaders) . "\n";
+
         } else {
             # Process data lines
             my @geneLine = split("\t", $line);
@@ -184,7 +196,7 @@ sub _preprocessInputFile {
                     print $out join("\t", @geneLine) . "\n";
                 }
             } else {
-                print "$geneId had only $countPassing of $#geneLine samples passing the threshold, " .
+                print STDERR "$geneId had only $countPassing of $#geneLine samples passing the threshold, " .
                       "so $geneId will not be included in the analysis.\n";
             }
         }
@@ -231,7 +243,7 @@ sub _runWGCNAAnalysis {
 # Parse module membership results and create output files
 #-------------------------------------------------------------------------------
 sub _parseModuleMembership {
-    my ($self, $outputDirFullPath, $inputSamples) = @_;
+    my ($self, $outputDirFullPath, $eigengeneNameHash) = @_;
 
     my $mergeCutHeight = MERGE_CUT_HEIGHT;
     my $membershipFile = "$outputDirFullPath/merged-$mergeCutHeight-membership.txt";
@@ -251,7 +263,10 @@ sub _parseModuleMembership {
     while (my $line = <$mm>) {
         chomp $line;
         my @fields = split /\t/, $line;
-        push @{$mmHash{$fields[1]}}, "$fields[0]\t$fields[2]\n";
+
+        my $moduleName = $eigengeneNameHash->{$fields[1]} ? $eigengeneNameHash->{$fields[1]} : $fields[1];
+
+        push @{$mmHash{$moduleName}}, "$fields[0]\t$fields[2]\n";
     }
     close $mm;
 
@@ -308,27 +323,60 @@ sub _processModuleEigengenes {
     my $mergeCutHeight = MERGE_CUT_HEIGHT;
     my $eigengenesFile = "merged-$mergeCutHeight-eigengenes" . EIGENGENES_SUFFIX;
 
+    my $orgAbbrev = $self->getOrganismAbbrev();
+    my $t = localtime;  # gets current local time
+    my $formatted_date = $t->strftime('%d%b%Y');  # formats date as 05Aug2025
+
+
     # Copy and rename eigengenes file
     my $sourceFile = "$outputDirFullPath/merged-$mergeCutHeight-eigengenes.txt";
-    my $cpCommand = "cp $sourceFile . && mv merged-$mergeCutHeight-eigengenes.txt $eigengenesFile";
-    system($cpCommand) == 0
-        or die "Error copying eigengenes file: $!";
+    open(IN, $sourceFile) or die "Cannot open sourceFile $sourceFile for reading: $!";
+    open(OUT, ">$eigengenesFile") or die "Cannot open eigengenesFile $eigengenesFile for writing: $!";
 
-    # Create eigengenes profile object
-    my $egenes = CBIL::StudyAssayResults::DataMunger::NoSampleConfigurationProfiles->new({
-        mainDirectory => $mainDirectory,
-        inputFile => $eigengenesFile,
-        makePercentiles => 0,
-        doNotLoad => 0,
-        profileSetName => $profileSetName
-    });
+    my $header = <IN>;
+    print OUT $header;
 
-    $egenes->setTechnologyType("RNASeq");
-    $egenes->setDisplaySuffix(" [$quantificationType - $strand - $valueType - unique]");
-    $egenes->setProtocolName("wgcna_eigengene");
-    $egenes->setSourceIdType("module");
+    my %moduleMap;
 
-    $egenes->munge();
+    my $moduleCount = 1;
+    while(<IN>) {
+        chomp;
+        my @a = split(/\t/, $_);
+
+        my $newId = "Module_${moduleCount}_${formatted_date}_${orgAbbrev}";
+
+        $moduleMap{$a[0]} = $newId;
+        $a[0] = $newId;
+
+        print OUT join("\t", @a) . "\n";
+        
+        $moduleCount++;
+    }
+
+    close IN;
+    close OUT;
+    
+    return \%moduleMap;
+
+    # my $cpCommand = "cp $sourceFile $eigengenesFile";
+    # system($cpCommand) == 0
+    #     or die "Error copying eigengenes file: $!";
+
+    # # Create eigengenes profile object
+    # my $egenes = CBIL::StudyAssayResults::DataMunger::NoSampleConfigurationProfiles->new({
+    #     mainDirectory => $mainDirectory,
+    #     inputFile => $eigengenesFile,
+    #     makePercentiles => 0,
+    #     doNotLoad => 1,
+    #     profileSetName => $profileSetName
+    # });
+
+    # $egenes->setTechnologyType("RNASeq");
+    # $egenes->setDisplaySuffix(" [$quantificationType - $strand - $valueType - unique]");
+    # $egenes->setProtocolName("wgcna_eigengene");
+    # $egenes->setSourceIdType("module");
+
+    #$egenes->munge();
 }
 
 

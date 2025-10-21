@@ -8,8 +8,23 @@ import groovy.json.JsonSlurper;
 import groovy.xml.XmlSlurper;
 
 params.tpmDir = params.tpmDir ? params.tpmDir : "$projectDir/NO_TPM_DIR";
-params.inputFile = params.inputFile ? params.inputFile : "$projectDir/NO_INPUT_FILE";
-params.pseudogenesFile = params.pseudogenesFile ? params.pseudogenesFile : "$projectDir/NO_PSEUDOGENES_FILE";
+params.inputFile = setFileParam(params.inputFile, "$projectDir/NO_INPUT_FILE");
+params.pseudogenesFile = setFileParam(params.pseudogenesFile, "$projectDir/NO_PSEUDOGENES_FILE");
+
+def setFileParam (filePath, nameIfMissing) {
+    if (filePath) {
+        def file = new File(filePath)
+        if (file.exists() && file.isFile()) {
+            return filePath;
+        }
+        else {
+            println "The file '${filePath}' does not exist."
+        }
+    }
+    println "Setting file param to: $nameIfMissing"
+    return nameIfMissing;
+}
+
 
 process PARSE_XML_CONFIG {
     container 'veupathdb/bioperl:latest'
@@ -269,16 +284,18 @@ workflow {
 
     FIX_CONFIG(ANALYZE_STEPS.out.mainWorkingDirectory.last())
     
-    // this means we are in RNASeq Context so we'll normalize the bedgraph files and merge
-    if(params.tpmDir != "NO_TPM_DIR") {
-        NORMALIZE_COVERAGE(FIX_CONFIG.out, params.chromosomeSizeFile, params.analysisConfigFile)
-        MERGE_BIGWIG(NORMALIZE_COVERAGE.out, params.chromosomeSizeFile, params.analysisConfigFile)
-        PUBLISH_ARTIFACT(MERGE_BIGWIG.out, params.tpmDir)
-    }
-    else {
+    // // this means we are in RNASeq Context so we'll normalize the bedgraph files and merge
+    // if(params.tpmDir != "NO_TPM_DIR") {
+    //     NORMALIZE_COVERAGE(FIX_CONFIG.out, params.chromosomeSizeFile, params.analysisConfigFile)
+    //     MERGE_BIGWIG(NORMALIZE_COVERAGE.out, params.chromosomeSizeFile, params.analysisConfigFile)
+    //     PUBLISH_ARTIFACT(MERGE_BIGWIG.out, params.tpmDir)
+    // }
+    // else {
+    //     PUBLISH_ARTIFACT(FIX_CONFIG.out, params.tpmDir)
+    // }
+
+
         PUBLISH_ARTIFACT(FIX_CONFIG.out, params.tpmDir)
-    }
-    
 }
 
 
