@@ -284,18 +284,16 @@ workflow {
 
     FIX_CONFIG(ANALYZE_STEPS.out.mainWorkingDirectory.last())
     
-    // // this means we are in RNASeq Context so we'll normalize the bedgraph files and merge
-    // if(params.tpmDir != "NO_TPM_DIR") {
-    //     NORMALIZE_COVERAGE(FIX_CONFIG.out, params.chromosomeSizeFile, params.analysisConfigFile)
-    //     MERGE_BIGWIG(NORMALIZE_COVERAGE.out, params.chromosomeSizeFile, params.analysisConfigFile)
-    //     PUBLISH_ARTIFACT(MERGE_BIGWIG.out, params.tpmDir)
-    // }
-    // else {
-    //     PUBLISH_ARTIFACT(FIX_CONFIG.out, params.tpmDir)
-    // }
-
-
+    // this means we are in RNASeq Context so we'll normalize the bedgraph files and merge
+    if(params.tpmDir != "NO_TPM_DIR") {
+        NORMALIZE_COVERAGE(FIX_CONFIG.out, params.chromosomeSizeFile, params.analysisConfigFile)
+        MERGE_BIGWIG(NORMALIZE_COVERAGE.out, params.chromosomeSizeFile, params.analysisConfigFile)
+        PUBLISH_ARTIFACT(MERGE_BIGWIG.out, params.tpmDir)
+    }
+    else {
         PUBLISH_ARTIFACT(FIX_CONFIG.out, params.tpmDir)
+    }
+
 }
 
 
