@@ -18,7 +18,7 @@ if (move($configFile, $tempFile)) {
         my @a = split(/\t/, $_);
 
         # fix the file path
-        $a[1] =~ s/.+\/analysis_output\//$outputDirName\/analysis_output\//;
+        $a[1] =~ s/.*analysis_output/\./;
 
         print OUT join("\t", @a) . "\n";
     }
