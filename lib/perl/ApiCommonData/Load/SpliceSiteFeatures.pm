@@ -64,7 +64,7 @@ sub munge {
 
   my $key;
 
-  open(FILE, '-|', "singularity exec docker://veupathdb/bowtiemapping:1.0.0 samtools view -h $file") or die "Cannot open pipe to samtools: $!";
+  open(FILE, '-|', "samtools view -h $file") or die "Cannot open pipe to samtools: $!";
 
   while (<FILE>){
     chomp;

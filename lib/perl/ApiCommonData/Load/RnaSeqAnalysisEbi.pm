@@ -7,7 +7,7 @@ use strict;
 use CBIL::StudyAssayResults::Error;
 
 use ApiCommonData::Load::RnaSeqCounts;
-use ApiCommonData::Load::IntronJunctionsEbi;
+use ApiCommonData::Load::IntronJunctions;
 
 use Data::Dumper;
 
@@ -60,7 +60,7 @@ sub munge {
             my $mainDirectory = $self->getMainDirectory();
             # input files in here TODO change to results
             my $mainDir = "$mainDirectory/results";
-            my $intronJunctions = ApiCommonData::Load::IntronJunctionsEbi->new({sampleName => $sampleName,
+            my $intronJunctions = ApiCommonData::Load::IntronJunctions->new({sampleName => $sampleName,
                                                                                 inputs => $samplesHash->{$sampleName},
                                                                                 mainDirectory => $mainDir,
                                                                                 profileSetName => $profileSetName,
