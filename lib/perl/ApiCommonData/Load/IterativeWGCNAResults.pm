@@ -1,15 +1,67 @@
+=head1 NAME
+
+ApiCommonData::Load::IterativeWGCNAResults - Processes RNA-Seq data through iterative WGCNA pipeline
+
+=head1 SYNOPSIS
+
+  my $wgcna = ApiCommonData::Load::IterativeWGCNAResults->new({
+    mainDirectory => '/path/to/data',
+    inputFile => 'expression_matrix.txt',
+    softThresholdPower => 6,
+    threshold => 1.0,
+    profileSetName => 'MyStudy',
+    ...
+  });
+
+  $wgcna->munge();
+
+=head1 DESCRIPTION
+
+This module performs Weighted Gene Co-expression Network Analysis (WGCNA) on RNA-Seq
+expression data. It processes input expression matrices by filtering low-expressed genes
+and pseudogenes, runs the iterativeWGCNA algorithm, and organizes the results into
+module membership files and eigengene profiles for database loading.
+
+The analysis workflow:
+1. Loads a list of pseudogenes to exclude
+2. Preprocesses input data by filtering genes below expression thresholds
+3. Executes the iterativeWGCNA algorithm with specified parameters
+4. Parses module membership correlations and writes per-module files
+5. Processes module eigengenes for downstream analysis
+
+Currently only analyzes the first strand and excludes pseudogenes.
+
+=head1 AUTHOR
+
+VEuPathDB
+
+=cut
 
 package ApiCommonData::Load::IterativeWGCNAResults;
 use base qw(CBIL::StudyAssayResults::DataMunger::Loadable);
 
 use strict;
-#use CBIL::StudyAssayResults::Error;
+use warnings;
 use CBIL::StudyAssayResults::DataMunger::NoSampleConfigurationProfiles;
 
 use Data::Dumper;
 
+use Time::Piece;
+
+# Constants
+use constant {
+    STRAND => 'firststrand',
+    SAMPLES_PASSING_THRESHOLD_PCT => 0.9,
+    MERGE_CUT_HEIGHT => 0.25,
+    WGCNA_PARAMS => 'maxBlockSize=3000,networkType=signed,minModuleSize=10,reassignThreshold=0,minKMEtoStay=0.8,minCoreKME=0.8',
+    OUTPUT_DIR => 'FirstStrandOutputs',
+    MM_OUTPUT_DIR => 'FirstStrandMMResultsForLoading',
+    EIGENGENES_SUFFIX => '_1stStrand.txt',
+};
+
+# Accessor methods
 sub getPower        { $_[0]->{softThresholdPower} }
-sub getOrganism        { $_[0]->{organism} }
+sub getOrganismAbbrev        { $_[0]->{organismAbbrev} }
 sub getInputSuffixMM              { $_[0]->{inputSuffixMM} }
 sub getInputSuffixME              { $_[0]->{inputSuffixME} }
 sub getInputSampleSuffix              { $_[0]->{inputSampleSuffix} }
@@ -19,7 +71,7 @@ sub getTechnologyType              { $_[0]->{technologyType} }
 sub getThreshold              { $_[0]->{threshold} }
 sub getValueType              { $_[0]->{valueType} }
 sub getQuantificationType              { $_[0]->{quantificationType} }
-
+sub getSamples                 { $_[0]->{samples} }
 
 #-------------------------------------------------------------------------------
 sub new {
@@ -40,176 +92,291 @@ sub new {
   return $self;
 }
 
-#------ Note: Currently we only look at the first strand, and exclude pseudogenes ------------------------#
-#---- Previous investigations considered the second strand, or running with protein coding genes only --- #
-
+#-------------------------------------------------------------------------------
+# Main analysis method - orchestrates the WGCNA analysis workflow
+#-------------------------------------------------------------------------------
 sub munge {
-	my ($self) = @_;
-	#------------- database configuration -----------#
-	my $mainDirectory = $self->getMainDirectory();
-	my $technologyType = $self->getTechnologyType();
-	my $valueType = $self->getValueType();
-	my $quantificationType = $self->getQuantificationType();
-	my $strand = "firststrand"; # Only doing first strand analyses.
-	my $profileSetName = $self->getprofileSetName();
+    my ($self) = @_;
+
+    my $mainDirectory = $self->getMainDirectory();
+    my $profileSetName = $self->getprofileSetName();
+
+    # Load pseudogenes list
+    my $pseudogenes = $self->_loadPseudogenes();
+
+    # Preprocess input file and get sample names
+    print STDERR "Using the first strand and excluding pseudogenes\n";
+    my ($preprocessedFile, $inputSamples) = $self->_preprocessInputFile($pseudogenes);
+
+    # Run WGCNA analysis
+    my $outputDirFullPath = $self->_runWGCNAAnalysis($preprocessedFile);
+
+    # Process module eigengenes
+    my $eigengeneNameHash = $self->_processModuleEigengenes($outputDirFullPath, $mainDirectory, $profileSetName);
+    
+    # Parse and save module membership results
+    my ($modules, $files) = $self->_parseModuleMembership($outputDirFullPath, $eigengeneNameHash);
+
+    # Configure module membership for loading
+    $self->_configureModuleMembership($modules, $files, $inputSamples, $profileSetName);
+
+}
+
+#-------------------------------------------------------------------------------
+# Load pseudogenes from file into a hash
+#-------------------------------------------------------------------------------
+sub _loadPseudogenes {
+    my ($self) = @_;
+
+    my $pseudogenesFile = $self->getPseudogenesFile();
+    open(my $fh, '<', $pseudogenesFile)
+        or die "Cannot open $pseudogenesFile for reading: $!";
+
+    my %pseudogenes;
+    while (my $line = <$fh>) {
+        chomp $line;
+        $pseudogenes{$line} = 1;
+    }
+    close $fh;
+
+    return \%pseudogenes;
+}
+
+#-------------------------------------------------------------------------------
+# Preprocess input file: filter genes by threshold and exclude pseudogenes
+#-------------------------------------------------------------------------------
+sub _preprocessInputFile {
+    my ($self, $pseudogenes) = @_;
+
+    my $mainDirectory = $self->getMainDirectory();
+    my $inputFile = $self->getInputFile();
+    my $threshold = $self->getThreshold();
+    my $preprocessedFile = "Preprocessed_" . $inputFile;
+
+    my $samplesHash = $self->groupListHashRef($self->getSamples());
+
+    open(my $in, '<', $inputFile)
+        or die "Couldn't open file $inputFile for reading: $!";
+    open(my $out, '>', "$mainDirectory/$preprocessedFile")
+        or die "Couldn't open file $mainDirectory/$preprocessedFile for writing: $!";
+
+    my %inputSamples;
+
+    while (my $line = <$in>) {
+        chomp $line;
+
+        if ($. == 1) {
+            # Process header line
+            my @headers = split("\t", $line);
+
+            my @origHeaders;
+            push @origHeaders, shift(@headers);
+
+            foreach my $header (@headers) {
+
+                
+                die "Require 1:1 sample name mapping". Dumper $samplesHash unless(scalar @{$samplesHash->{$header}} == 1);
+                my $origName = $samplesHash->{$header}->[0];
+                push @origHeaders, $origName;
+            }
+
+            print $out join("\t", @origHeaders) . "\n";
+
+        } else {
+            # Process data lines
+            my @geneLine = split("\t", $line);
+            my $geneId = $geneLine[0];
+
+            # Count samples passing threshold
+            my $countPassing = grep { $_ > $threshold } @geneLine[1 .. $#geneLine];
+            my $passingPct = $countPassing / $#geneLine;
+
+            if ($passingPct > SAMPLES_PASSING_THRESHOLD_PCT) {
+                unless ($pseudogenes->{$geneId}) {
+                    print $out join("\t", @geneLine) . "\n";
+                }
+            } else {
+                print STDERR "$geneId had only $countPassing of $#geneLine samples passing the threshold, " .
+                      "so $geneId will not be included in the analysis.\n";
+            }
+        }
+    }
+
+    close $in;
+    close $out;
+
+    return ($preprocessedFile, \%inputSamples);
+}
+
+#-------------------------------------------------------------------------------
+# Run the iterativeWGCNA analysis
+#-------------------------------------------------------------------------------
+sub _runWGCNAAnalysis {
+    my ($self, $preprocessedFile) = @_;
+
+    my $mainDirectory = $self->getMainDirectory();
+    my $power = $self->getPower();
+    my $outputDir = OUTPUT_DIR;
+    my $outputDirFullPath = "$mainDirectory/$outputDir";
+
+    mkdir($outputDirFullPath)
+        or die "Cannot create directory $outputDirFullPath: $!";
+
+    my $inputFileForWGCNA = "$mainDirectory/$preprocessedFile";
+    my $mergeCutHeight = MERGE_CUT_HEIGHT;
+    my $wgcnaParams = WGCNA_PARAMS;
+
+    # Build command with power parameter substituted
+    my $command = "iterativeWGCNA -i $inputFileForWGCNA -o $outputDirFullPath -v " .
+                  "--wgcnaParameters $wgcnaParams,power=$power " .
+                  "--finalMergeCutHeight $mergeCutHeight";
+
+    print STDERR "INPUT FILE: $inputFileForWGCNA\n";
+
+    system($command) == 0
+        or die "Error running WGCNA command: $command";
+
+    return $outputDirFullPath;
+}
+
+#-------------------------------------------------------------------------------
+# Parse module membership results and create output files
+#-------------------------------------------------------------------------------
+sub _parseModuleMembership {
+    my ($self, $outputDirFullPath, $eigengeneNameHash) = @_;
+
+    my $mergeCutHeight = MERGE_CUT_HEIGHT;
+    my $membershipFile = "$outputDirFullPath/merged-$mergeCutHeight-membership.txt";
+    my $outputDirMM = MM_OUTPUT_DIR;
+    my $outputDirMMFullPath = "$outputDirFullPath/$outputDirMM";
+
+    mkdir($outputDirMMFullPath)
+        or die "Cannot create directory $outputDirMMFullPath: $!";
+
+    # Parse membership file
+    open(my $mm, '<', $membershipFile)
+        or die "Couldn't open $membershipFile for reading: $!";
+
+    my %mmHash;
+    <$mm>; # Skip header
+
+    while (my $line = <$mm>) {
+        chomp $line;
+        my @fields = split /\t/, $line;
+
+        my $moduleName = $eigengeneNameHash->{$fields[1]} ? $eigengeneNameHash->{$fields[1]} : $fields[1];
+
+        push @{$mmHash{$moduleName}}, "$fields[0]\t$fields[2]\n";
+    }
+    close $mm;
+
+    # Write per-module membership files
+    my @files;
+    my @modules;
+    my @moduleNames = grep { $_ ne 'UNCLASSIFIED' } keys %mmHash;
+
+    foreach my $moduleName (@moduleNames) {
+        push @modules, $moduleName . " " . $self->getInputSuffixMM();
+        push @files, OUTPUT_DIR . "/$outputDirMM/$moduleName" . "_1st.txt";
+
+        my $outputFile = "$outputDirMMFullPath/$moduleName" . "_1st.txt";
+        open(my $mmout, '>', $outputFile) or die "Cannot open $outputFile: $!";
+        print $mmout "geneID\tcorrelation_coefficient\n";
+        print $mmout $_ for @{$mmHash{$moduleName}};
+        close $mmout;
+    }
+
+    return (\@modules, \@files);
+}
+
+#-------------------------------------------------------------------------------
+# Configure module membership results for loading
+#-------------------------------------------------------------------------------
+sub _configureModuleMembership {
+    my ($self, $modules, $files, $inputSamples, $profileSetName) = @_;
+
+    my %inputProtocolAppNodesHash;
+    foreach my $module (@$modules) {
+        my @sampleList = map { $_ . " " . $self->getInputSampleSuffix() }
+                         sort keys %$inputSamples;
+        push @{$inputProtocolAppNodesHash{$module}}, join(';', @sampleList);
+    }
+
+    $self->setInputProtocolAppNodesHash(\%inputProtocolAppNodesHash);
+    $self->setNames($modules);
+    $self->setFileNames($files);
+    $self->setProtocolName("WGCNA");
+    $self->setSourceIdType("gene");
+    $self->setProfileSetName("$profileSetName " . $self->getInputSuffixMM());
+    $self->createConfigFile();
+}
+
+#-------------------------------------------------------------------------------
+# Process module eigengenes for loading
+#-------------------------------------------------------------------------------
+sub _processModuleEigengenes {
+    my ($self, $outputDirFullPath, $mainDirectory, $profileSetName) = @_;
+
+    my $quantificationType = $self->getQuantificationType();
+    my $valueType = $self->getValueType();
+    my $strand = STRAND;
+    my $mergeCutHeight = MERGE_CUT_HEIGHT;
+    my $eigengenesFile = "merged-$mergeCutHeight-eigengenes" . EIGENGENES_SUFFIX;
+
+    my $orgAbbrev = $self->getOrganismAbbrev();
+    my $t = localtime;  # gets current local time
+    my $formatted_date = $t->strftime('%d%b%Y');  # formats date as 05Aug2025
 
 
-	my $pseudogenesFile = $self->getPseudogenesFile();
-	open(PSEUDO, $pseudogenesFile) or die "Cannot open $pseudogenesFile for reading: $!";
-	my %pseudogenes;
+    # Copy and rename eigengenes file
+    my $sourceFile = "$outputDirFullPath/merged-$mergeCutHeight-eigengenes.txt";
+    open(IN, $sourceFile) or die "Cannot open sourceFile $sourceFile for reading: $!";
+    open(OUT, ">$eigengenesFile") or die "Cannot open eigengenesFile $eigengenesFile for writing: $!";
 
-	while(<PSEUDO>) {
-		chomp;
-		$pseudogenes{$_} = 1;
-	}
+    my $header = <IN>;
+    print OUT $header;
 
-	close PSEUDO;
+    my %moduleMap;
 
-	#--------- extract inputs -------#
-	my $power = $self->getPower();
-	my $inputFile = $self->getInputFile();
-	my $organism = $self->getOrganism();
-	my $threshold = $self->getThreshold();
+    my $moduleCount = 1;
+    while(<IN>) {
+        chomp;
+        my @a = split(/\t/, $_);
 
-	print "Using the first strand and excluding pseudogenes\n";
-	my $preprocessedFile = "Preprocessed_" . $inputFile;
+        my $newId = "Module_${moduleCount}_${formatted_date}_${orgAbbrev}";
 
-	#-------- Parse file and create input file for wgcna (called preprocessedFile) ---------#
-	open(IN, "<", $inputFile) or die "Couldn't open file $inputFile for reading, $!";
-	open(OUT,">$mainDirectory/$preprocessedFile") or die "Couldn't open file $mainDirectory/$preprocessedFile for writing, $!";
-	
-	my %inputSamples;
-	# Read through inputFile. Format and apply a floor thresholding if necessary
-	while (my $line = <IN>){
-		chomp $line;
-		# chomp $line; Removed because we actually want that new line char to show up at the end.
-		if ($. == 1){
-			# Handle headers
-			my @headers = split("\t",$line);
-			# chomp @headers; # Causing new line issues
-			print OUT join("\t",@headers) . "\n";
-			
-		        @headers = map {s/^\s+|\s+$//g; $_ } @headers;  # clean white space. Likely want to do a map not grep. Map returns each element of @all.
-			
-                        foreach(@headers){
-			  if($_ =~ /\S/){	
-                            $inputSamples{$_} = 1;
-			  }
-                        }
-                        $headers[0] = 'Gene';
-		}else{
-			# Each line describes one gene. First element is gene identifier
-			my @geneLine = split("\t",$line);
+        $moduleMap{$a[0]} = $newId;
+        $a[0] = $newId;
 
-			
-			#### Let's change this to hard threshold that is a configuration in the xml threshold. Have it be in the native units (tpm or log2 ratio)
-			# Will leave it to be set in the analysis config so that it can vary by dataset
-			# Try running with a few cutoffs to see if any difference. Consider the wgcna output stats in optimization
-			# Make sure to document in confluence! Also worth putting in readmes within the workspace directories
-			# Picking 90%. Can add to the analysisConfig if necessary but keeping it simple for now.
-			my $countSamplesPassingThreshold = 0;
-			foreach(@geneLine[1 .. $#geneLine]){
-				if ($_ > $threshold) {
-					$countSamplesPassingThreshold++;
-				}
-			}
+        print OUT join("\t", @a) . "\n";
+        
+        $moduleCount++;
+    }
 
-			if (($countSamplesPassingThreshold/$#geneLine) > 0.9) {
-				unless($pseudogenes{$geneLine[0]}){
-					print OUT  join("\t",@geneLine) . "\n";
-				}
-			} else {
-				print "$geneLine[0] had only $countSamplesPassingThreshold of $#geneLine samples passing the given reads threshold, so $geneLine[0] will not be included in the analysis.\n";
-			}
+    close IN;
+    close OUT;
+    
+    return \%moduleMap;
 
-		}
-	}
-	close IN;
-	close OUT;
-		
-	#-------------- run IterativeWGCNA docker image -----#
-	my $outputDir = "FirstStrandOutputs";
-	my $outputDirFullPath = $mainDirectory . "/" . $outputDir;
-	mkdir($outputDirFullPath);
+    # my $cpCommand = "cp $sourceFile $eigengenesFile";
+    # system($cpCommand) == 0
+    #     or die "Error copying eigengenes file: $!";
 
+    # # Create eigengenes profile object
+    # my $egenes = CBIL::StudyAssayResults::DataMunger::NoSampleConfigurationProfiles->new({
+    #     mainDirectory => $mainDirectory,
+    #     inputFile => $eigengenesFile,
+    #     makePercentiles => 0,
+    #     doNotLoad => 1,
+    #     profileSetName => $profileSetName
+    # });
 
-	my $inputFileForWGCNA = "$mainDirectory/$preprocessedFile";
-	my $command = "iterativeWGCNA -i $inputFileForWGCNA  -o  $outputDirFullPath  -v  --wgcnaParameters maxBlockSize=3000,networkType=signed,power=$power,minModuleSize=10,reassignThreshold=0,minKMEtoStay=0.8,minCoreKME=0.8  --finalMergeCutHeight 0.25";
+    # $egenes->setTechnologyType("RNASeq");
+    # $egenes->setDisplaySuffix(" [$quantificationType - $strand - $valueType - unique]");
+    # $egenes->setProtocolName("wgcna_eigengene");
+    # $egenes->setSourceIdType("module");
 
-	print STDERR "iNPUTFILE=". $inputFileForWGCNA."\n";
-
-	#my $command = "singularity run -H $mainDirectory docker://veupathdb/iterativewgcna -i $inputFileForWGCNA  -o  $outputDirFullPath  -v  --wgcnaParameters maxBlockSize=3000,networkType=signed,power=$power,minModuleSize=10,reassignThreshold=0,minKMEtoStay=0.8,minCoreKME=0.8  --finalMergeCutHeight 0.25";
-	#my $command = "singularity run --bind $mainDirectory:/home/docker   docker://jbrestel/iterative-wgcna -i /home/docker$outputFile  -o  /home/docker/$outputDir  -v  --wgcnaParameters maxBlockSize=3000,networkType=signed,power=$power,minModuleSize=10,reassignThreshold=0,minKMEtoStay=0.8,minCoreKME=0.8  --finalMergeCutHeight 0.25"; 
-	
-	system($command) == 0 or die "Error running singularity command:  $command";
-	
-	#-------------- parse Module Membership -----#
-	my $outputDirModuleMembership = "FirstStrandMMResultsForLoading";
-	my $outputDirModuleMembershipFullPath = $outputDirFullPath . "/" . $outputDirModuleMembership;
-	mkdir($outputDirModuleMembershipFullPath);
-
-	
-	open(MM, "<", "$outputDirFullPath/merged-0.25-membership.txt") or die "Couldn't open $outputDirFullPath/merged-0.25-membership.txt for reading";
-	my %MMHash;
-	<MM>; # skip header
-	while (my $line = <MM>) {
-		chomp($line);
-		my @all = split/\t/,$line;
-		push @{$MMHash{$all[1]}}, "$all[0]\t$all[2]\n"; # also can just exclude Unclassified things
-	}
-	close MM;
-
-		
-	my @files;
-	my @modules;
-	my @allKeys = keys %MMHash;
-	my @ModuleNames = grep { $_ ne 'UNCLASSIFIED' } @allKeys; # removes unclassifieds
-	for my $i(@ModuleNames){
-		push @modules,$i . " " . $self->getInputSuffixMM();
-		push @files,"$outputDir/$outputDirModuleMembership" . "/$i" . "_1st" . "\.txt";
-		open(MMOUT, ">$outputDirModuleMembershipFullPath/$i" . "_1st" . "\.txt") or die $!;
-		print MMOUT "geneID\tcorrelation_coefficient\n";
-		for my $ii(@{$MMHash{$i}}){
-				print MMOUT $ii;
-		}
-		close MMOUT;
-	}
-
-
-	my %inputProtocolAppNodesHash;
-	foreach(@modules) {
-          push @{$inputProtocolAppNodesHash{$_}}, join(';', map {$_ . " " . $self->getInputSampleSuffix()} sort keys %inputSamples);
-	}
-		
-	# Sets things for config file. What my instance of this object did (parameters)
-	$self->setInputProtocolAppNodesHash(\%inputProtocolAppNodesHash);
-	$self->setNames(\@modules);                                                                                           
-	$self->setFileNames(\@files);
-	$self->setProtocolName("WGCNA");
-	$self->setSourceIdType("gene"); # Each row in this file is a gene, to be looked up with a gene source id
-        $self->setProfileSetName("$profileSetName " . $self->getInputSuffixMM());
-	$self->createConfigFile();
-		
-		
-	#-------------- parse Module Eigengene -----#
-
-	#-- copy module_egene file to one upper dir and the run doTranscription --#
-	my $CPcommand = "cp  $outputDirFullPath/merged-0.25-eigengenes.txt  . ; 
-											mv merged-0.25-eigengenes.txt merged-0.25-eigengenes_1stStrand.txt ";
-	my $CPresults  =  system($CPcommand);
-
-	# Also something like sourceIdType. Default is "gene". In this case should probably be "eigengene" so that the plugin knows.
-        my $egenes = CBIL::StudyAssayResults::DataMunger::NoSampleConfigurationProfiles->new(
-		{mainDirectory => "$mainDirectory", inputFile => "merged-0.25-eigengenes_1stStrand.txt",makePercentiles => 0,doNotLoad => 0,profileSetName => "$profileSetName"}
-	);
-	$egenes ->setTechnologyType("RNASeq");
-        $egenes->setDisplaySuffix(" [$quantificationType" . " - $strand" . " - $valueType" . " - unique]");
-	$egenes->setProtocolName("wgcna_eigengene"); # Will be consumed by the loader (insertAnalysisResults plugin). Also need to change it in the plugin
-        $egenes->setSourceIdType("module"); # Each row is a module	
-
-	# The following writes the appropriate rows in insert_study_results_config.txt
-        $egenes ->munge();
-			
+    #$egenes->munge();
 }
 
 
