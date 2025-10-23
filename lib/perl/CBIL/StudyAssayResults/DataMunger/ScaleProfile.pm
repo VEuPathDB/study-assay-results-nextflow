@@ -19,14 +19,6 @@ sub new {
 
   $args->{samples} = 'PLACEHOLDER';
 
-  # update main directory to new data structure
-  # cannot update arg at command line because it is correct for RnaSeqAnalysis Module
-  my $mainDirectory = $args->{mainDirectory};
-  if(-e "${mainDirectory}/analysis_output") {
-	  $mainDirectory = "${mainDirectory}/analysis_output";
-  }
-  $args->{mainDirectory} = $mainDirectory;
-
 
   if(!$args->{scalingFactorsFile}) {
     $args->{scalingFactorsFile} = $args->{inputFile};
