@@ -24,12 +24,6 @@ sub new {
     $args->{doNotLoad} = 1;
     $args->{outputFile} = $outputFile;
 
-    # update this arg for new data structure
-    # we cannot change the arg at the command line since it is correct for the RnaSeqAnalysis module
-    my $mainDirectory = $args->{mainDirectory};
-    $mainDirectory = "${mainDirectory}/analysis_output";
-    $args->{mainDirectory} = $mainDirectory;
-
     my $self = $class->SUPER::new($args);
 
     return $self;
