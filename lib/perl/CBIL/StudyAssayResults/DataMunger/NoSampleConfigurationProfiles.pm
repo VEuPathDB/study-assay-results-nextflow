@@ -31,8 +31,6 @@ sub new {
   }
 
   my $mainDirectory = $args->{mainDirectory};
-  $mainDirectory = "$mainDirectory/analysis_output";
-  $args->{mainDirectory} = $mainDirectory;
 
   open(FILE, "$mainDirectory/$output") || die "Cannot open file $mainDirectory/$output for reading $!";
   my $header = <FILE>;
