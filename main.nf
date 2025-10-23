@@ -90,7 +90,7 @@ process DO_STEP {
     
     // here we are in rnaseq mode
     // This ONLY happens for RNASeqAnalysisEbi which MUST be the first step in the rnaseq xml
-    if(tpmDir.name != "NO_TPM_DIR" || stepNumber > 1) {
+    if(tpmDir.name != "NO_TPM_DIR" && stepNumber == 1) {
         """
         cp $remainingStepsFile outputRemainingStepsFile.json
 
@@ -237,7 +237,7 @@ workflow {
 
     for (int i = 0; i < parsedXml.step.size(); i++) {
         def xmlStep = parsedXml.step[i];
-        def containerName = 'veupathdb/gusenv:latest';
+        def containerName = 'veupathdb/gusenv:latest'; //use local image for testing
         
 
         // notice the fancy syntax to get the attribute value
