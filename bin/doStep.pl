@@ -13,11 +13,12 @@ use CBIL::StudyAssayResults::Error;
 
 use Data::Dumper;
 
-my ($help, $jsonFile, $mainDirectory, $inputFile, $technologyType, $pseudogenesFile);
+my ($help, $jsonFile, $mainDirectory, $inputFile, $technologyType, $pseudogenesFile, $taskDirectory);
 
 &GetOptions('help|h' => \$help,
             'json_file=s' => \$jsonFile,
             'main_directory=s' => \$mainDirectory,
+            'task_directory=s' => \$taskDirectory,
             'input_file=s' => \$inputFile,
             'technology_type=s' => \$technologyType,
             'pseudogenes_file=s' => \$pseudogenesFile,
@@ -29,6 +30,17 @@ unless(-e $jsonFile) {
 
 unless(-d $mainDirectory) {
   &usage("Error:  Main Directory $mainDirectory does not exist.");
+}
+
+if($mainDirectory) {
+  $mainDirectory = $taskDirectory . "/" . $mainDirectory;
+}
+
+if($inputFile) {
+  $inputFile = $taskDirectory . "/" . $inputFile ;
+}
+if($pseudogenesFile) {
+  $pseudogenesFile = $taskDirectory . '//' . $pseudogenesFile;
 }
 
 open my $fh, '<', $jsonFile or die "Could not open file '$jsonFile': $!";
@@ -61,6 +73,8 @@ $args->{mainDirectory} = $mainDirectory;
 unless($args->{inputFile}) {
   $args->{inputFile} = $inputFile;
 }
+
+print STDERR Dumper $args;
 
 eval "require $class";
 CBIL::StudyAssayResults::Error->new($@)->throw() if $@;

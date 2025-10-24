@@ -99,9 +99,8 @@ process DO_STEP {
 
 
     script:
-    
-    def pseudogenes_file_arg = pseudogenesFile.name == "NO_PSEUDOGENES_FILE" ? "" : "--pseudogenes_file " + "\$PWD/" + "/" + pseudogenesFile;
-    def input_file_arg = inputFile.name == "NO_INPUT_FILE" ? "" : "--input_file " +  "\$PWD/" + inputFile.name;
+    def pseudogenes_file_arg = pseudogenesFile.name == "NO_PSEUDOGENES_FILE" ? "" : "--pseudogenes_file " + pseudogenesFile;
+    def input_file_arg = inputFile.name == "NO_INPUT_FILE" ? "" : "--input_file " + inputFile.name;
     
     // here we are in rnaseq mode
     // This ONLY happens for RNASeqAnalysisEbi which MUST be the first step in the rnaseq xml
@@ -109,11 +108,11 @@ process DO_STEP {
         """
         cp $remainingStepsFile outputRemainingStepsFile.json
 
-        doStep.pl --json_file $jsonFile \\
-            --main_directory \$PWD/$mainWorkingDirectory \\
+        doStep.pl --task_directory \$PWD --json_file $jsonFile \\
+            --main_directory $mainWorkingDirectory \\
             --technology_type $params.technologyType $input_file_arg $pseudogenes_file_arg
 
-        WRONG_CONFIG=\$PWD/$mainWorkingDirectory/insert_study_results_config.txt
+        WRONG_CONFIG="$mainWorkingDirectory/insert_study_results_config.txt"
         if [ -e "\$WRONG_CONFIG" ]; then
           echo "Error: \$WRONG_CONFIG exists in the wrong directory"
           exit 1
@@ -125,9 +124,10 @@ process DO_STEP {
         """
         cp $remainingStepsFile outputRemainingStepsFile.json
 
-        doStep.pl --json_file $jsonFile \\
-            --main_directory \$PWD/$mainWorkingDirectory/analysis_output \\
+        doStep.pl --task_directory \$PWD --json_file $jsonFile \\
+            --main_directory $mainWorkingDirectory/analysis_output \\
             --technology_type $params.technologyType $input_file_arg $pseudogenes_file_arg
+            
         """
     }
 }
@@ -253,7 +253,7 @@ workflow {
     for (int i = 0; i < parsedXml.step.size(); i++) {
         def xmlStep = parsedXml.step[i];
         def containerName = 'veupathdb/gusenv:latest'; //use local image for testing
-        
+
 
         // notice the fancy syntax to get the attribute value
         if(xmlStep.@class == "ApiCommonData::Load::IterativeWGCNAResults") {

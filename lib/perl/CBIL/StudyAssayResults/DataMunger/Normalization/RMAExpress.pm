@@ -4,8 +4,9 @@ use base qw(CBIL::StudyAssayResults::DataMunger::Normalization);
 use strict;
 
 use CBIL::StudyAssayResults::Error;
-use File::Temp qw/ tempfile /;
+use File::Temp qw/ tempfile tempdir /;
 use File::Basename;
+use Cwd;
 
 sub getCdfFile                 { $_[0]->getMappingFile }
 sub getCelFilePath             { $_[0]->getMainDirectory }
@@ -13,48 +14,138 @@ sub getCelFilePath             { $_[0]->getMainDirectory }
 sub munge {
   my ($self) = @_;
 
-  my $dataConfigFile = $self->makeDataConfigFile();
-  my $optionsConfigFile = $self->makeOptionsConfigFile();
+  my $dir = getcwd();
+
+  my $rTempPackageDir = tempdir( CLEANUP => 1 );
+  mkdir $rTempPackageDir;
+  chdir $rTempPackageDir;
+
+  my $dataFilesRString = $self->makeDataFilesRString();
+
+  # Get the clean CDF name that was created
+  my $cdfFile = $self->getCdfFile();
+  my $cdfFileBasename = basename($cdfFile);
+  my $cleanCdfName = $self->getCleanCdfName($cdfFileBasename);
+
+  my $makeCdfPackageRFile = $self->writeCdfPackage($rTempPackageDir, $cleanCdfName);
+  $self->runR($makeCdfPackageRFile);
   
-  my $systemResult = system("RMAExpressConsole $dataConfigFile $optionsConfigFile");
-    
-  unless($systemResult / 256 == 0) {
-    die"Could not run RMAExpressConsole command";
+    my $tmpInstall = tempdir( CLEANUP => 1 );
+  my $installCmd = "R CMD INSTALL -l $tmpInstall ${rTempPackageDir}/${cleanCdfName}";
+  my $installRes = system($installCmd);
+  unless($installRes / 256 == 0) {
+    CBIL::StudyAssayResults::Error->new("Error while attempting to run R:\n$installCmd")->throw();
   }
-  unlink($dataConfigFile, $optionsConfigFile);
+
+  my $rFile = $self->writeRScript($dataFilesRString, $cleanCdfName, $tmpInstall);
+
+  $self->runR($rFile);
+
+  chdir $dir;
+
+  unlink($rFile, $makeCdfPackageRFile);
+  system("rm -rf $rTempPackageDir");
 }
 
-sub makeDataConfigFile {
-  my ($self) = @_;
+sub getCleanCdfName {
+  my ($self, $cdfFileBasename) = @_;
+
+  # Replicate the cleancdfname logic from affy package
+  my $cleanCdfName = $cdfFileBasename;
+  $cleanCdfName =~ s/\.cdf$/cdf/i;  # Remove .cdf extension (case insensitive)
+  $cleanCdfName =~ s/-//g;        # Remove hyphens
+  $cleanCdfName = lc($cleanCdfName);  # Convert to lowercase
+
+  return $cleanCdfName;
+}
+
+sub writeCdfPackage {
+  my ($self, $pkgPath, $packageName) = @_;
 
   my $cdfFile = $self->getCdfFile();
-  my $dataPath = $self->getCelFilePath();
+  my $cdfFileBasename = basename($cdfFile);
+  my $cdfDirname = dirname($cdfFile);
 
-  my ($fh, $filename) = tempfile();
+  my ($rfh, $rFile) = tempfile();
 
-  print $fh "$cdfFile\n";
+  open(RCODE, "> $rFile") or die "Cannot open $rFile for writing:$!";
 
-  foreach my $celfile (@{$self->getDataFiles()}) {
-    print $fh "$dataPath" . "/" . "$celfile\n";
-  }
+  my $rString = <<RString;
+load.affy = library(affy, logical.return=TRUE);
+load.makecdfenv = library(makecdfenv, logical.return=TRUE);
 
-  return $filename;
+if(load.affy && load.makecdfenv) {
+
+  cdfBasename = "$cdfFileBasename";
+  cdfDirname = "$cdfDirname";
+
+  make.cdf.package(cdfBasename,
+                   cdf.path = cdfDirname,
+                   packagename = "$packageName",
+                   package.path = "$pkgPath",
+                   compress = TRUE, species="Happy_birthday")
+
+} else {
+  stop("ERROR: could not load required libraries [affy, makecdfenv]");
+}
+RString
+
+  print RCODE $rString;
+
+  close RCODE;
+
+  return $rFile;
 }
 
-sub makeOptionsConfigFile {
-  my ($self) = @_;
+sub writeRScript {
+  my ($self, $samples, $cdfLibrary, $cdfLibraryPath) = @_;
 
-  my $dataPath = $self->getCelFilePath();
+  my $celFilePath = $self->getCelFilePath();
+  my $outputFile = $celFilePath . "/" . $self->getOutputFile();
 
-  my $outputFile = $dataPath . "/" . $self->getOutputFile();
+  my ($rfh, $rFile) = tempfile();
 
-  my ($fh, $filename) = tempfile();
+  open(RCODE, "> $rFile") or die "Cannot open $rFile for writing:$!";
 
-  print $fh "1\n";
+  my $rString = <<RString;
 
-  print $fh "$outputFile\n";
+library(preprocessCore)
+load.cdf = library($cdfLibrary, logical.return=TRUE, lib.loc="$cdfLibraryPath");
+load.affy = library(affy, logical.return=TRUE);
 
-  return $filename;
+if(load.cdf && load.affy) {
+
+  data.files = vector();
+  $samples
+
+  celPath = "$celFilePath";
+
+  data = ReadAffy(filenames=data.files, celfile.path=celPath);
+
+
+
+res <- expresso(data,
+                                bg.correct = TRUE,
+                                bgcorrect.method = "rma",
+                                normalize = TRUE,
+                                normalize.method = "quantiles",
+                                pmcorrect.method = "pmonly",
+                                summary.method = "medianpolish")
+
+  #res = rma(data, verbose=FALSE);
+
+  write.table(exprs(res), file="$outputFile", quote=FALSE, sep="\\t", row.names=TRUE, col.names=NA);
+
+} else {
+  stop("ERROR: could not load required libraries");
+}
+RString
+
+  print RCODE $rString;
+
+  close RCODE;
+
+  return $rFile;
 }
 
 
