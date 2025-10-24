@@ -13,48 +13,53 @@ sub getCelFilePath             { $_[0]->getMainDirectory }
 sub munge {
   my ($self) = @_;
 
-  my $dataConfigFile = $self->makeDataConfigFile();
-  my $optionsConfigFile = $self->makeOptionsConfigFile();
-  
-  my $systemResult = system("RMAExpressConsole $dataConfigFile $optionsConfigFile");
-    
-  unless($systemResult / 256 == 0) {
-    die"Could not run RMAExpressConsole command";
-  }
-  unlink($dataConfigFile, $optionsConfigFile);
+  my $dataFilesRString = $self->makeDataFilesRString();
+
+  my $rFile = $self->writeRScript($dataFilesRString);
+
+  $self->runR($rFile);
+
+  unlink($rFile);
 }
 
-sub makeDataConfigFile {
-  my ($self) = @_;
+sub writeRScript {
+  my ($self, $samples) = @_;
 
   my $cdfFile = $self->getCdfFile();
-  my $dataPath = $self->getCelFilePath();
+  my $celFilePath = $self->getCelFilePath();
+  my $outputFile = $celFilePath . "/" . $self->getOutputFile();
 
-  my ($fh, $filename) = tempfile();
+  my ($rfh, $rFile) = tempfile();
 
-  print $fh "$cdfFile\n";
+  open(RCODE, "> $rFile") or die "Cannot open $rFile for writing:$!";
 
-  foreach my $celfile (@{$self->getDataFiles()}) {
-    print $fh "$dataPath" . "/" . "$celfile\n";
-  }
+  my $rString = <<RString;
+load.affy = library(affy, logical.return=TRUE);
 
-  return $filename;
+if(load.affy) {
+  data.files = vector();
+  $samples
+
+  celPath = "$celFilePath";
+  cdfFile = "$cdfFile";
+
+  celFiles = paste(celPath, data.files, sep="/");
+
+  data = ReadAffy(filenames=celFiles, cdfname=cdfFile);
+  res = rma(data);
+
+  write.table(exprs(res), file="$outputFile", quote=FALSE, sep="\\t", row.names=TRUE, col.names=NA);
+
+} else {
+  stop("ERROR: could not load required library [affy]");
 }
+RString
 
-sub makeOptionsConfigFile {
-  my ($self) = @_;
+  print RCODE $rString;
 
-  my $dataPath = $self->getCelFilePath();
+  close RCODE;
 
-  my $outputFile = $dataPath . "/" . $self->getOutputFile();
-
-  my ($fh, $filename) = tempfile();
-
-  print $fh "1\n";
-
-  print $fh "$outputFile\n";
-
-  return $filename;
+  return $rFile;
 }
 
 
