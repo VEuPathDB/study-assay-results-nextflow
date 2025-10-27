@@ -153,27 +153,18 @@ sub _preprocessInputFile {
     my $threshold = $self->getThreshold();
     my $preprocessedFile = "Preprocessed_" . $inputFile;
 
-   if (!defined $self->{samples} || ref($self->{samples}) ne 'ARRAY' || !@{$self->{samples}}) {
-        warn "INFO: \$self->{samples} is empty. Populating from input file header...\n";
-        open(my $fh, '<', "$mainDirectory/$inputFile")
-            or die "Cannot open $mainDirectory/$inputFile: $!";
-        my $headerLine = <$fh>;
-        close $fh;
-        chomp $headerLine;
-        my @headers = split("\t", $headerLine);
-        @headers = grep { $_ ne '' } @headers;
-        $self->{samples} = \@headers;
-    }
-
     my $samplesHash = $self->groupListHashRef($self->getSamples());
-    open(my $in, '<', "$mainDirectory/$inputFile")
-        or die "Couldn't open file $mainDirectory/$inputFile for reading: $!";
+
+    open(my $in, '<', $inputFile)
+        or die "Couldn't open file $inputFile for reading: $!";
     open(my $out, '>', "$mainDirectory/$preprocessedFile")
         or die "Couldn't open file $mainDirectory/$preprocessedFile for writing: $!";
+
     my %inputSamples;
 
     while (my $line = <$in>) {
         chomp $line;
+
         if ($. == 1) {
             # Process header line
             my @headers = split("\t", $line);
@@ -183,6 +174,7 @@ sub _preprocessInputFile {
 
             foreach my $header (@headers) {
 
+                
                 die "Require 1:1 sample name mapping". Dumper $samplesHash unless(scalar @{$samplesHash->{$header}} == 1);
                 my $origName = $samplesHash->{$header}->[0];
                 push @origHeaders, $origName;
@@ -270,7 +262,6 @@ sub _parseModuleMembership {
 
     while (my $line = <$mm>) {
         chomp $line;
-
         my @fields = split /\t/, $line;
 
         my $moduleName = $eigengeneNameHash->{$fields[1]} ? $eigengeneNameHash->{$fields[1]} : $fields[1];
