@@ -53,7 +53,8 @@ sub getCleanCdfName {
   # Replicate the cleancdfname logic from affy package
   my $cleanCdfName = $cdfFileBasename;
   $cleanCdfName =~ s/\.cdf$/cdf/i;  # Remove .cdf extension (case insensitive)
-  $cleanCdfName =~ s/-//g;        # Remove hyphens
+  $cleanCdfName =~ s/[^a-zA-Z0-9]//g; # Remove any non-alphanumeric character
+  #$cleanCdfName =~ s/-//g;        # Remove hyphens
   $cleanCdfName = lc($cleanCdfName);  # Convert to lowercase
 
   return $cleanCdfName;
