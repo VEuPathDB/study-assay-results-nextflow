@@ -18,6 +18,8 @@ sub setSourceIdType         { $_[0]->{sourceIdType} = $_[1] }
 sub getDisplaySuffix {$_[0]->{displaySuffix}}
 sub setDisplaySuffix {$_[0]->{displaySuffix} = $_[1]}
 
+sub getSampleNameCaptureForProfilePrefix          { $_[0]->{sampleNameCaptureForProfilePrefix} }
+
 #--------------------------------------------------------------------------------
 
 sub getProfileSetName          { $_[0]->{profileSetName} }
@@ -120,6 +122,13 @@ sub createConfigFile {
     else {
         $profileSetName .= " [$technologyType]";
 
+    }
+
+
+
+    if(my $capture = $self->getSampleNameCaptureForProfilePrefix()) {
+      $name =~ /$capture/;
+      $profileSetName = $1 . " " . $profileSetName;
     }
 
     $name .= " ($technologyType)";

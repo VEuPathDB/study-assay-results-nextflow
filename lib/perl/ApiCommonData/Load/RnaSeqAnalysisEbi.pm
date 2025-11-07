@@ -16,12 +16,16 @@ my $OUTPUT_FILE_BASE = "profiles";
 
 #-------------------------------------------------------------------------------
 
-sub getProfileSetName          { $_[0]->{profileSetName} }
+sub getProfileSetName { $_[0]->{profileSetName} }
+
 sub getSamples                 { $_[0]->{samples} }
 
 sub getIsStrandSpecific        { $_[0]->{isStrandSpecific} }
 sub getSeqIdPrefix             { $_[0]->{seqIdPrefix}}
 sub getPatch                   {$_[0]->{patch} }
+
+
+sub getSampleNameCaptureForProfilePrefix          { $_[0]->{sampleNameCaptureForProfilePrefix} }
 
 
 #-------------------------------------------------------------------------------
@@ -36,9 +40,10 @@ sub new {
     if(my $outputPrefix = $self->getOutputFile()) {
 	    $OUTPUT_FILE_BASE = $outputPrefix . $OUTPUT_FILE_BASE;
     }
-    
+
     return $self;
 }
+
 
 sub munge {
     my ($self) = @_;
@@ -64,6 +69,7 @@ sub munge {
                                                                                 inputs => $samplesHash->{$sampleName},
                                                                                 mainDirectory => $mainDir,
                                                                                 profileSetName => $profileSetName,
+                                                                                sampleNameCaptureForProfilePrefix => $self->getSampleNameCaptureForProfilePrefix(),
                                                                                 samplesHash => $samplesHash,
                                                                                 sourceIdPrefix => $self->getSeqIdPrefix,
                                                                                 suffix => 'junctions.tab'});
@@ -129,6 +135,7 @@ sub makeProfiles {
 	     fileSuffix => "$featureType.$quantificationType.$strand.$valueType",
 	     samples => $samples,
 	     profileSetName => $profileSetName,
+         sampleNameCaptureForProfilePrefix => $self->getSampleNameCaptureForProfilePrefix(),
          sampleNameAsDir => 1,
          isUnique => $isUnique,
          strand => $strand,
