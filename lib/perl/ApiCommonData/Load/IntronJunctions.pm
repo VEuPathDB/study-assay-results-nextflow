@@ -54,9 +54,6 @@ sub munge {
 
   foreach my $input (@$inputs) {
     my $inputFile = "$input/$suffix";
-
-    print STDERR "INPUTFILE=$inputFile\n";
-    print STDERR "CWD=" . cwd() . "\n";
     
     open(my $fh, $inputFile) or die "Cannot open input file $inputFile for reading:$!";
 
@@ -65,9 +62,6 @@ sub munge {
     while(<$fh>) {
       chomp;
       my ($junction, $strand, $u, $nu) = split(/\t/, $_);
-
-
-      print "uniuqe $u\n";
 
       my $id = $junction . $strand;
 
