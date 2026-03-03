@@ -47,9 +47,8 @@ sub new {
 
               my $profileSetName = $conditionAName . " vs." . $conditionBName;
 
-              my $inputsHash = { $analysisName => [$conditionAName, $conditionBName] };
-
-              $clone->setInputProtocolAppNodesHash($inputsHash);
+              # my $inputsHash = { $analysisName => [$conditionAName, $conditionBName] };
+              # $clone->setInputProtocolAppNodesHash($inputsHash);
 
               $clone->setSourceIdType("gene");
 
