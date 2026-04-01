@@ -228,7 +228,9 @@ sub update_coverage {
             next unless ($chr && $start && $stop && $score);
 
             $chr = $seqIdPrefix ? "$seqIdPrefix:$chr" : $chr;
-                        
+
+	    warn "DEBUG: k=$k bamfile=$bamfile coverage=$coverage avgReadLength=$avgReadLength\n";
+	    
             my $normalized_score = $score == 0 ? 0 : sprintf ("%.2f", (($score * (($stop-$start)/$avgReadLength)) / (($coverage /1000000) * (($stop - $start)/1000)))/$normFactor );
             #we want to set any that have a normalized score to <1 to 0 for only the score. 
             my $normalized_score_for_log = $normalized_score;
