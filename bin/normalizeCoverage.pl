@@ -215,6 +215,8 @@ sub update_coverage {
             open OUT, ">$out_dir/$f" or die "Cannot open file $out_dir/$f for writing: $!";
             my $outputFile = $f;
             my $bamfile = $f;
+            $bamfile =~ s/\.(firststrand|secondstrand)CombinedReps/CombinedReps/;
+            $bamfile =~ s/\.(firststrand|secondstrand)//;
             $bamfile =~ s/\.bed$/.bam/;
             $outputFile =~ s/\.bed$/_unlogged.bed/;
             open OUTUNLOGGED, ">$out_dir/$outputFile" or die "cannot open file $out_dir/$outputFile for writing :$!";
@@ -224,13 +226,11 @@ sub update_coverage {
 
             while(<F>) {
             my($chr, $start, $stop, $score) = split /\t/, $_;
-            
+
             next unless ($chr && $start && $stop && $score);
 
             $chr = $seqIdPrefix ? "$seqIdPrefix:$chr" : $chr;
 
-	    warn "DEBUG: k=$k bamfile=$bamfile coverage=$coverage avgReadLength=$avgReadLength\n";
-	    
             my $normalized_score = $score == 0 ? 0 : sprintf ("%.2f", (($score * (($stop-$start)/$avgReadLength)) / (($coverage /1000000) * (($stop - $start)/1000)))/$normFactor );
             #we want to set any that have a normalized score to <1 to 0 for only the score. 
             my $normalized_score_for_log = $normalized_score;
