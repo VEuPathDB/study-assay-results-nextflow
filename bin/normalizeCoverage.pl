@@ -215,9 +215,12 @@ sub update_coverage {
             open OUT, ">$out_dir/$f" or die "Cannot open file $out_dir/$f for writing: $!";
             my $outputFile = $f;
             my $bamfile = $f;
-            $bamfile =~ s/\.(firststrand|secondstrand)CombinedReps/CombinedReps/;
-            $bamfile =~ s/\.(firststrand|secondstrand)//;
             $bamfile =~ s/\.bed$/.bam/;
+            unless (defined $hash2{$k}{$bamfile}) {
+                (my $bamfile_nostrand = $bamfile) =~ s/\.(firststrand|secondstrand)CombinedReps/CombinedReps/;
+                $bamfile_nostrand =~ s/\.(firststrand|secondstrand)//;
+                $bamfile = $bamfile_nostrand if defined $hash2{$k}{$bamfile_nostrand};
+            }
             $outputFile =~ s/\.bed$/_unlogged.bed/;
             open OUTUNLOGGED, ">$out_dir/$outputFile" or die "cannot open file $out_dir/$outputFile for writing :$!";
             my $coverage = $hash2{$k}{$bamfile}->[0];
