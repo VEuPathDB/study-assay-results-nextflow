@@ -53,7 +53,7 @@ while(<$fh>) {
 close $fh;
 
 # Decode the JSON text into a Perl object
-my $jsonParser = JSON->new;
+my $jsonParser = JSON->new->utf8;
 my $stepObj = $jsonParser->decode($jsonText);
 
 my $args = $stepObj->{arguments};
