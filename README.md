@@ -1,233 +1,61 @@
-# Study Assay Results Nextflow Pipeline
+# study-assay-results-nextflow
 
-A Nextflow pipeline for processing study assay results with a focus on RNA-Seq analysis workflows. This pipeline provides a flexible, containerized framework for executing multi-step data processing workflows defined in XML configuration files.
+A Nextflow pipeline that executes multi-step, XML-defined post-processing workflows over study assay results (RNA-Seq profiles, differential expression, WGCNA, microarray analyses, and related transformations) as part of VEuPathDB's data-loading pipeline.
 
-## Features
+## Overview
 
-- **Flexible workflow definition** via XML configuration files
-- **Containerized execution** with Docker or Singularity support
-- **Multi-step processing** with sequential execution of analysis steps
-- **RNA-Seq specialized mode** with TPM (Transcripts Per Million) support
-- **Extensible architecture** for adding new analysis types
+VEuPathDB study assay results (RNA-Seq, microarray, and other high-throughput assay data) go through a series of analysis and transformation steps before being loaded into the site databases — computing expression profiles, normalizing coverage, running differential expression, clustering with WGCNA, and so on. This pipeline drives that process: it reads a declarative XML configuration that lists the steps to run, executes each step in order inside the appropriate container, and publishes the resulting `analysis_output` directory (plus, in RNA-Seq mode, normalized coverage and merged bigWig tracks) to a specified output location.
 
-## Prerequisites
+Each step is implemented as a Perl class under `lib/perl/` (mostly `ApiCommonData::Load::*` and `CBIL::StudyAssayResults::DataMunger::*`) that extends the `CBIL::StudyAssayResults::DataMunger` base class and implements a `munge()` method. The pipeline parses the XML config into a JSON step queue and processes it recursively, one step at a time, using Nextflow's recursion feature.
 
-- [Nextflow](https://www.nextflow.io/) (version compatible with DSL2 and recursion)
-- [Docker](https://www.docker.com/) or [Singularity](https://sylabs.io/singularity/)
+## Requirements
 
-## Quick Start
+- [Nextflow](https://www.nextflow.io/) with DSL2 and the recursion preview feature enabled (`nextflow.preview.recursion = true`, set in `main.nf`)
+- [Docker](https://www.docker.com/) (default, via `conf/docker.config`) or [Singularity](https://sylabs.io/singularity/) (via `conf/singularity.config`)
 
-### Basic Usage
+## Usage
+
+The pipeline has a single entry point (the default `workflow`).
 
 ```bash
-nextflow run main.nf \
-  --analysisConfigFile data/test1/analysisConfig.xml \
-  --finalDir data/test1 \
-  --outputDirectory output \
-  --technologyType rnaseq
+nextflow run VEuPathDB/study-assay-results-nextflow -r main \
+  --analysisConfigFile analysisConfig.xml \
+  --finalDir results/ \
+  --outputDirectory output/ \
+  --technologyType rnaseq \
+  -resume -C <config>
 ```
 
-### With Singularity
+To run with Singularity instead of Docker, add `-c conf/singularity.config`.
 
-```bash
-nextflow run main.nf \
-  -c conf/singularity.config \
-  --analysisConfigFile data/test1/analysisConfig.xml \
-  --finalDir data/test1 \
-  --outputDirectory output \
-  --technologyType rnaseq
-```
+### Operating modes
 
-## Parameters
+The pipeline behaves differently depending on whether `--tpmDir` is set:
 
-### Required Parameters
+- **Normal mode** (`--tpmDir` not set): input files from `--finalDir` are copied into an `analysis_output` working directory, and each step runs against that directory. Used for microarray and other non-RNA-Seq assay types.
+- **RNA-Seq mode** (`--tpmDir` set): `--finalDir` and `--tpmDir` are both copied into a working directory, and the first step (which must be `ApiCommonData::Load::RnaSeqAnalysisEbi`) runs against the working directory root rather than `analysis_output`. After all steps complete, the pipeline additionally normalizes bedGraph coverage (`NORMALIZE_COVERAGE`, via `normalizeCoverage.pl`) and merges per-sample bigWig tracks (`MERGE_BIGWIG`, via `rnaseqMerge.pl`) before publishing.
+
+## Key parameters
 
 | Parameter | Description |
-|-----------|-------------|
-| `--analysisConfigFile` | Path to XML configuration file defining the analysis workflow |
-| `--finalDir` | Path to directory containing input data files |
-| `--outputDirectory` | Path where output files will be published |
-| `--technologyType` | Technology type (e.g., `rnaseq`, `microarray`) |
+|-----------|--------------|
+| `--analysisConfigFile` | XML file defining the ordered list of analysis steps and their properties |
+| `--finalDir` | Directory containing the input assay result files |
+| `--outputDirectory` | Directory the final `analysis_output` (and, in RNA-Seq mode, `normalize_coverage`/`mergedBigwigs`) is published to |
+| `--technologyType` | Assay technology type passed to each step (e.g. `rnaseq`, `microarray`) |
+| `--tpmDir` | Directory of TPM (transcripts-per-million) data; setting this switches the pipeline into RNA-Seq mode |
+| `--chromosomeSizeFile` | Chromosome/sequence size file used for coverage normalization and bigWig merging in RNA-Seq mode |
+| `--inputFile` | Optional path to a specific input file, if not otherwise defined per-step in the XML config |
+| `--pseudogenesFile` | Optional pseudogenes file used to filter results in applicable steps |
 
-### Optional Parameters
+### XML configuration format
 
-| Parameter | Description |
-|-----------|-------------|
-| `--inputFile` | Path to specific input file (can also be defined in XML config) |
-| `--tpmDir` | Path to TPM directory (required for RNASeq mode) |
-| `--pseudogenesFile` | Path to pseudogenes file for filtering |
+Each `<step class="...">` element in the XML config maps to a Perl analysis class and its constructor properties. A `<globalReferencable>` block can define values that are shared across steps by setting `isReference="1"` and referencing `$globalReferencable->{name}`. Steps run in document order; example configs live under `data/`.
 
-## Operating Modes
+## Output
 
-The pipeline automatically switches between two modes based on whether `--tpmDir` is provided:
+The pipeline publishes to `--outputDirectory`:
 
-### Normal Mode
-
-Used for most assay types. Input files from `finalDir` are copied into an `analysis_output` subdirectory.
-
-```bash
-nextflow run main.nf \
-  --analysisConfigFile config.xml \
-  --finalDir input_data/ \
-  --outputDirectory results/ \
-  --technologyType microarray
-```
-
-### RNASeq Mode
-
-Used when TPM data needs to be processed alongside standard results. Requires both `finalDir` and `tpmDir`.
-
-```bash
-nextflow run main.nf \
-  --analysisConfigFile config.xml \
-  --finalDir input_data/final \
-  --tpmDir input_data/TPM \
-  --outputDirectory results/ \
-  --technologyType rnaseq
-```
-
-## XML Configuration
-
-Workflows are defined using XML configuration files. Here's an example structure:
-
-```xml
-<xml>
-  <globalReferencable>
-    <!-- Define reusable variables -->
-    <property name="profileSetName" value="My Analysis"/>
-    <property name="samples">
-      <value>group1|sample1</value>
-      <value>group1|sample2</value>
-      <value>group2|sample3</value>
-    </property>
-  </globalReferencable>
-
-  <!-- Define analysis steps -->
-  <step class="ApiCommonData::Load::RnaSeqAnalysisEbi">
-    <property name="profileSetName" isReference="1"
-              value="$globalReferencable->{profileSetName}" />
-    <property name="samples" isReference="1"
-              value="$globalReferencable->{samples}" />
-    <property name="isStrandSpecific" value="1"/>
-  </step>
-
-  <step class="ApiCommonData::Load::IterativeWGCNAResults">
-    <property name="profileSetName" value="WGCNA Analysis"/>
-    <property name="inputFile" value="profiles.genes.htseq-union.firststrand.tpm"/>
-    <property name="softThresholdPower" value="10"/>
-    <property name="organism" value="Plasmodium falciparum 3D7"/>
-  </step>
-</xml>
-```
-
-### Configuration Features
-
-- **globalReferencable**: Define variables that can be referenced across multiple steps
-- **isReference**: Set to "1" to evaluate property values as Perl expressions
-- **Multiple steps**: Chain analysis steps that execute sequentially
-
-Example configurations can be found in the `data/` directory.
-
-## Available Analysis Types
-
-The pipeline supports various analysis step types including:
-
-- **RNA-Seq Analysis**: `ApiCommonData::Load::RnaSeqAnalysisEbi`, `ApiCommonData::Load::RNASeqProfiles`
-- **Differential Expression**: `ApiCommonData::Load::DeseqAnalysis`, `ApiCommonData::Load::DEGseqAnalysis`
-- **Network Analysis**: `ApiCommonData::Load::WGCNA`, `ApiCommonData::Load::IterativeWGCNAResults`
-- **Normalization**: Various methods in `CBIL::StudyAssayResults::DataMunger::Normalization::*`
-- **And many more** in the `lib/perl/` directory
-
-## Project Structure
-
-```
-.
-├── main.nf                      # Main Nextflow workflow
-├── nextflow.config              # Pipeline configuration
-├── conf/
-│   ├── docker.config            # Docker-specific settings
-│   └── singularity.config       # Singularity-specific settings
-├── bin/
-│   ├── doStep.pl                # Execute individual analysis steps
-│   └── nextStepFromJsonFile.pl  # Manage step queue
-├── lib/
-│   ├── perl/                    # Perl analysis modules
-│   │   ├── ApiCommonData/Load/  # Analysis step implementations
-│   │   └── CBIL/StudyAssayResults/  # Core framework
-│   └── R/StudyAssayResults/     # R utility functions
-└── data/                        # Example configurations and test data
-```
-
-## How It Works
-
-1. **Parse Configuration**: The XML config is parsed into a JSON array of analysis steps
-2. **Setup Working Directory**: Input files are organized based on the operating mode
-3. **Execute Steps**: Each step is executed sequentially in its appropriate container
-4. **Publish Results**: Final outputs are published to the specified output directory
-
-The pipeline uses Nextflow's recursion feature to iterate through analysis steps, ensuring they execute in the correct order with proper data dependencies.
-
-## Container Images
-
-The pipeline uses pre-built container images from VEuPathDB:
-
-- `veupathdb/gusenv:latest` - Main analysis environment
-- `veupathdb/iterativewgcna:latest` - WGCNA analysis
-- `veupathdb/bioperl:latest` - Perl utilities
-- `veupathdb/alpine_bash:latest` - Lightweight utilities
-
-## Development
-
-### Adding New Analysis Steps
-
-1. Create a new Perl module in `lib/perl/ApiCommonData/Load/` or `lib/perl/CBIL/StudyAssayResults/DataMunger/`
-2. Extend the `CBIL::StudyAssayResults::DataMunger` base class
-3. Implement the `munge()` method with your analysis logic
-4. If your step requires a specific container, update the container mapping in `main.nf`
-
-Example:
-
-```perl
-package ApiCommonData::Load::MyNewAnalysis;
-use base qw(CBIL::StudyAssayResults::DataMunger);
-
-sub munge {
-    my ($self) = @_;
-
-    # Your analysis logic here
-    my $inputFile = $self->getInputFile();
-    my $outputFile = $self->getOutputFile();
-
-    # Process data...
-}
-
-1;
-```
-
-### Testing
-
-Test configurations are available in the `data/` directory:
-
-```bash
-# Test with example data
-nextflow run main.nf \
-  --analysisConfigFile data/test1/analysisConfig.xml \
-  --finalDir data/test1 \
-  --outputDirectory test_output \
-  --technologyType rnaseq
-```
-
-## Troubleshooting
-
-### Common Issues
-
-**Container permissions**: The Docker configuration runs containers with your user ID to avoid permission issues. If you encounter permission errors, check the `docker.runOptions` in `conf/docker.config`.
-
-**Library paths**: The pipeline automatically sets `PERL5LIB` and `MY_R_LIB` environment variables. If modules aren't being found, verify these are correctly configured in your container config.
-
-**Step failures**: Check the Nextflow work directory for detailed logs from failed steps. Each step's stdout/stderr is captured in its work directory.
-
-## License
-
-See [LICENSE](LICENSE) file for details.
-
+- `analysis_output/` — the accumulated output of every analysis step, always produced
+- `normalize_coverage/` — normalized per-sample bedGraph coverage (RNA-Seq mode only)
+- `mergedBigwigs/` — merged bigWig coverage tracks (RNA-Seq mode only)
