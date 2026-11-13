@@ -187,6 +187,11 @@ sub _preprocessInputFile {
             my @geneLine = split("\t", $line);
             my $geneId = $geneLine[0];
 
+            if ($#geneLine < 1) {
+                print STDERR "$geneId has no sample values, so $geneId will not be included in the analysis.\n";
+                next;
+            }
+
             # Count samples passing threshold
             my $countPassing = grep { $_ > $threshold } @geneLine[1 .. $#geneLine];
             my $passingPct = $countPassing / $#geneLine;
