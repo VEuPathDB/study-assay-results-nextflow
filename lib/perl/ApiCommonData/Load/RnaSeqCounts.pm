@@ -219,6 +219,9 @@ sub createEDACountsFile {
     print WGCNAIN "\t" . join("\t", @$samples) . "\n";
  
     foreach my $gene (keys(%$countHash)) {
+        #filter out additional rows added by htseq-count
+        next if $gene =~ /^__/;
+
         my @countValues = map { $countHash->{$gene}->{$_} } @$samples;
         print EDA "$gene\t" . join("\t", @countValues) . "\n";
 
