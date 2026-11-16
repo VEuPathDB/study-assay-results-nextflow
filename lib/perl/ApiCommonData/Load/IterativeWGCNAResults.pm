@@ -153,7 +153,7 @@ sub _preprocessInputFile {
     my $threshold = $self->getThreshold();
     my $preprocessedFile = "Preprocessed_" . $inputFile;
 
-    my $samplesHash = $self->groupListHashRef($self->getSamples());
+    my $headerNames = $self->_headerToSampleName();
 
     open(my $in, '<', $inputFile)
         or die "Couldn't open file $inputFile for reading: $!";
@@ -173,11 +173,9 @@ sub _preprocessInputFile {
             push @origHeaders, shift(@headers);
 
             foreach my $header (@headers) {
-
-                
-                die "Require 1:1 sample name mapping". Dumper $samplesHash unless(scalar @{$samplesHash->{$header}} == 1);
-                my $origName = $samplesHash->{$header}->[0];
-                push @origHeaders, $origName;
+                die "Column $header in $inputFile is not in the samples property:\n" . Dumper $headerNames
+                    unless(exists $headerNames->{$header});
+                push @origHeaders, $headerNames->{$header};
             }
 
             print $out join("\t", @origHeaders) . "\n";
@@ -211,6 +209,32 @@ sub _preprocessInputFile {
     close $out;
 
     return ($preprocessedFile, \%inputSamples);
+}
+
+#-------------------------------------------------------------------------------
+# Map input column headers (run names) to WGCNA sample names: the group name
+# when the group has a single run, otherwise the run name so columns stay unique
+#-------------------------------------------------------------------------------
+sub _headerToSampleName {
+    my ($self) = @_;
+
+    my $samplesHash = $self->groupListHashRef($self->getSamples());
+
+    my %names;
+    foreach my $group (keys %$samplesHash) {
+        my @runs = @{$samplesHash->{$group}};
+        foreach my $run (@runs) {
+            $names{$run} = scalar(@runs) == 1 ? $group : $run;
+        }
+    }
+
+    # configs listing the header as the group name ("run|display") keep working
+    foreach my $group (keys %$samplesHash) {
+        next if exists $names{$group};
+        $names{$group} = $samplesHash->{$group}->[0] if scalar(@{$samplesHash->{$group}}) == 1;
+    }
+
+    return \%names;
 }
 
 #-------------------------------------------------------------------------------
