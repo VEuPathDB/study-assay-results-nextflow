@@ -129,6 +129,11 @@ sub _loadPseudogenes {
     my ($self) = @_;
 
     my $pseudogenesFile = $self->getPseudogenesFile();
+    unless ($pseudogenesFile) {
+        print STDERR "No pseudogenes file given, so no genes are excluded as pseudogenes.\n";
+        return {};
+    }
+
     open(my $fh, '<', $pseudogenesFile)
         or die "Cannot open $pseudogenesFile for reading: $!";
 
@@ -143,7 +148,8 @@ sub _loadPseudogenes {
 }
 
 #-------------------------------------------------------------------------------
-# Preprocess input file: filter genes by threshold and exclude pseudogenes
+# Preprocess input file: drop genes with missing values, filter RNA-Seq genes
+# by threshold and exclude pseudogenes
 #-------------------------------------------------------------------------------
 sub _preprocessInputFile {
     my ($self, $pseudogenes) = @_;
@@ -152,6 +158,9 @@ sub _preprocessInputFile {
     my $inputFile = $self->getInputFile();
     my $threshold = $self->getThreshold();
     my $preprocessedFile = "Preprocessed_" . $inputFile;
+
+    # the threshold is an expression level (TPM); microarray values are log ratios
+    my $applyThreshold = lc($self->getTechnologyType() // '') eq 'rnaseq';
 
     my $headerNames = $self->_headerToSampleName();
 
@@ -190,17 +199,26 @@ sub _preprocessInputFile {
                 next;
             }
 
-            # Count samples passing threshold
-            my $countPassing = grep { $_ > $threshold } @geneLine[1 .. $#geneLine];
-            my $passingPct = $countPassing / $#geneLine;
+            # iterativeWGCNA reads "NA" as text, which blanks the whole column
+            my $countMissing = grep { $_ eq 'NA' || $_ eq '' } @geneLine[1 .. $#geneLine];
+            if ($countMissing) {
+                print STDERR "$geneId has $countMissing missing values, so $geneId will not be included in the analysis.\n";
+                next;
+            }
 
-            if ($passingPct > SAMPLES_PASSING_THRESHOLD_PCT) {
-                unless ($pseudogenes->{$geneId}) {
-                    print $out join("\t", @geneLine) . "\n";
+            if ($applyThreshold) {
+                my $countPassing = grep { $_ > $threshold } @geneLine[1 .. $#geneLine];
+                my $passingPct = $countPassing / $#geneLine;
+
+                unless ($passingPct > SAMPLES_PASSING_THRESHOLD_PCT) {
+                    print STDERR "$geneId had only $countPassing of $#geneLine samples passing the threshold, " .
+                          "so $geneId will not be included in the analysis.\n";
+                    next;
                 }
-            } else {
-                print STDERR "$geneId had only $countPassing of $#geneLine samples passing the threshold, " .
-                      "so $geneId will not be included in the analysis.\n";
+            }
+
+            unless ($pseudogenes->{$geneId}) {
+                print $out join("\t", @geneLine) . "\n";
             }
         }
     }
