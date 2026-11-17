@@ -129,6 +129,11 @@ sub _loadPseudogenes {
     my ($self) = @_;
 
     my $pseudogenesFile = $self->getPseudogenesFile();
+    unless ($pseudogenesFile) {
+        print STDERR "No pseudogenes file given, so no genes are excluded as pseudogenes.\n";
+        return {};
+    }
+
     open(my $fh, '<', $pseudogenesFile)
         or die "Cannot open $pseudogenesFile for reading: $!";
 
@@ -143,7 +148,8 @@ sub _loadPseudogenes {
 }
 
 #-------------------------------------------------------------------------------
-# Preprocess input file: filter genes by threshold and exclude pseudogenes
+# Preprocess input file: drop genes with missing values, filter RNA-Seq genes
+# by threshold and exclude pseudogenes
 #-------------------------------------------------------------------------------
 sub _preprocessInputFile {
     my ($self, $pseudogenes) = @_;
@@ -153,7 +159,10 @@ sub _preprocessInputFile {
     my $threshold = $self->getThreshold();
     my $preprocessedFile = "Preprocessed_" . $inputFile;
 
-    my $samplesHash = $self->groupListHashRef($self->getSamples());
+    # the threshold is an expression level (TPM); microarray values are log ratios
+    my $applyThreshold = lc($self->getTechnologyType() // '') eq 'rnaseq';
+
+    my $headerNames = $self->_headerToSampleName();
 
     open(my $in, '<', $inputFile)
         or die "Couldn't open file $inputFile for reading: $!";
@@ -173,11 +182,9 @@ sub _preprocessInputFile {
             push @origHeaders, shift(@headers);
 
             foreach my $header (@headers) {
-
-                
-                die "Require 1:1 sample name mapping". Dumper $samplesHash unless(scalar @{$samplesHash->{$header}} == 1);
-                my $origName = $samplesHash->{$header}->[0];
-                push @origHeaders, $origName;
+                die "Column $header in $inputFile is not in the samples property:\n" . Dumper $headerNames
+                    unless(exists $headerNames->{$header});
+                push @origHeaders, $headerNames->{$header};
             }
 
             print $out join("\t", @origHeaders) . "\n";
@@ -192,17 +199,26 @@ sub _preprocessInputFile {
                 next;
             }
 
-            # Count samples passing threshold
-            my $countPassing = grep { $_ > $threshold } @geneLine[1 .. $#geneLine];
-            my $passingPct = $countPassing / $#geneLine;
+            # iterativeWGCNA reads "NA" as text, which blanks the whole column
+            my $countMissing = grep { $_ eq 'NA' || $_ eq '' } @geneLine[1 .. $#geneLine];
+            if ($countMissing) {
+                print STDERR "$geneId has $countMissing missing values, so $geneId will not be included in the analysis.\n";
+                next;
+            }
 
-            if ($passingPct > SAMPLES_PASSING_THRESHOLD_PCT) {
-                unless ($pseudogenes->{$geneId}) {
-                    print $out join("\t", @geneLine) . "\n";
+            if ($applyThreshold) {
+                my $countPassing = grep { $_ > $threshold } @geneLine[1 .. $#geneLine];
+                my $passingPct = $countPassing / $#geneLine;
+
+                unless ($passingPct > SAMPLES_PASSING_THRESHOLD_PCT) {
+                    print STDERR "$geneId had only $countPassing of $#geneLine samples passing the threshold, " .
+                          "so $geneId will not be included in the analysis.\n";
+                    next;
                 }
-            } else {
-                print STDERR "$geneId had only $countPassing of $#geneLine samples passing the threshold, " .
-                      "so $geneId will not be included in the analysis.\n";
+            }
+
+            unless ($pseudogenes->{$geneId}) {
+                print $out join("\t", @geneLine) . "\n";
             }
         }
     }
@@ -211,6 +227,32 @@ sub _preprocessInputFile {
     close $out;
 
     return ($preprocessedFile, \%inputSamples);
+}
+
+#-------------------------------------------------------------------------------
+# Map input column headers (run names) to WGCNA sample names: the group name
+# when the group has a single run, otherwise the run name so columns stay unique
+#-------------------------------------------------------------------------------
+sub _headerToSampleName {
+    my ($self) = @_;
+
+    my $samplesHash = $self->groupListHashRef($self->getSamples());
+
+    my %names;
+    foreach my $group (keys %$samplesHash) {
+        my @runs = @{$samplesHash->{$group}};
+        foreach my $run (@runs) {
+            $names{$run} = scalar(@runs) == 1 ? $group : $run;
+        }
+    }
+
+    # configs listing the header as the group name ("run|display") keep working
+    foreach my $group (keys %$samplesHash) {
+        next if exists $names{$group};
+        $names{$group} = $samplesHash->{$group}->[0] if scalar(@{$samplesHash->{$group}}) == 1;
+    }
+
+    return \%names;
 }
 
 #-------------------------------------------------------------------------------
